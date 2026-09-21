@@ -1,0 +1,120 @@
+<Window x:Class="GameLauncher.App.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="My Game Launcher - Phase 0"
+        Width="900"
+        Height="560"
+        MinWidth="720"
+        MinHeight="460"
+        WindowStartupLocation="CenterScreen"
+        Background="#111318"
+        Foreground="#F5F7FA">
+    <Grid Margin="28">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="18"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="18"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="18"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <StackPanel Grid.Row="0">
+            <TextBlock Text="MY GAME LAUNCHER"
+                       FontSize="12"
+                       FontWeight="SemiBold"
+                       Foreground="#9CA3AF"/>
+            <TextBlock Text="Phase 0 Foundation"
+                       Margin="0,4,0,0"
+                       FontSize="30"
+                       FontWeight="SemiBold"/>
+            <TextBlock Text="WPF + SQLite + core data model + launcher adapter seam"
+                       Margin="0,6,0,0"
+                       FontSize="14"
+                       Foreground="#AEB5C0"/>
+        </StackPanel>
+
+        <Border Grid.Row="2"
+                Padding="16"
+                CornerRadius="10"
+                Background="#1A1E25">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="16"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="10"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+                <TextBlock Grid.Row="0" Grid.Column="0"
+                           Text="Database"
+                           FontWeight="SemiBold"
+                           Foreground="#C7CDD6"/>
+                <TextBlock x:Name="DatabasePathText"
+                           Grid.Row="0" Grid.Column="2"
+                           TextWrapping="Wrap"
+                           Foreground="#E5E7EB"/>
+
+                <TextBlock Grid.Row="2" Grid.Column="0"
+                           Text="Adapter"
+                           FontWeight="SemiBold"
+                           Foreground="#C7CDD6"/>
+                <TextBlock Grid.Row="2" Grid.Column="2"
+                           Text="Phase 0 Demo Adapter"
+                           Foreground="#E5E7EB"/>
+            </Grid>
+        </Border>
+
+        <Border Grid.Row="4"
+                Padding="16"
+                CornerRadius="10"
+                Background="#1A1E25">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="12"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+
+                <TextBlock Text="Games currently stored"
+                           FontSize="16"
+                           FontWeight="SemiBold"/>
+
+                <ListBox x:Name="GamesList"
+                         Grid.Row="2"
+                         BorderThickness="0"
+                         Background="Transparent"
+                         Foreground="#F5F7FA"
+                         DisplayMemberPath="Title"/>
+            </Grid>
+        </Border>
+
+        <Grid Grid.Row="6">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <TextBlock x:Name="StatusText"
+                       VerticalAlignment="Center"
+                       Text="Ready to validate the foundation."
+                       Foreground="#AEB5C0"/>
+
+            <Button x:Name="FoundationCheckButton"
+                    Grid.Column="1"
+                    Padding="18,9"
+                    BorderThickness="0"
+                    Background="#E8EAED"
+                    Foreground="#111318"
+                    FontWeight="SemiBold"
+                    Cursor="Hand"
+                    Content="Run foundation check"
+                    Click="FoundationCheckButton_Click"/>
+        </Grid>
+    </Grid>
+</Window>
