@@ -1,132 +1,164 @@
-# Game Launcher
+# My Game Launcher
 
-A lightweight, open-source Windows game launcher built around a local unified library. Current implementation: **Phase 7 - History + Console Accounts**.
+A lightweight, open-source Windows launcher focused on a unified local PC library, game-session tracking, controller use, and personal gaming history.
 
-## Current features
+**Current release target: v1.0.0 — Phase 8 Final Product.**
 
-- Installed-game discovery for Steam, Epic, GOG, EA app, Ubisoft Connect, Battle.net, and Xbox / Microsoft Store `XboxGames` installs.
+## Core features
+
+- Detects installed games from Steam, Epic, GOG, EA app, Ubisoft Connect, Battle.net, and Xbox / Microsoft Store `XboxGames`.
 - Manual game entries.
-- Conservative cross-store duplicate reconciliation.
+- Conservative duplicate reconciliation across stores.
 - Automatic/local cover-art caching.
-- Game launching with process detection and persisted playtime.
+- Launches games and tracks local play sessions/playtime.
 - Per-game smart launch profiles with pre-launch, companion, and post-game programs.
-- Gameplay-only RTSS overlay with FPS, GPU usage, and GPU temperature.
-- Hatchable synchronization for Next 100 ranking, status, progress, rating, playtime, and last-played data.
-- Hardware-aware Graphics Optimizer with safe backup/apply/restore for verified game configs.
-- **Gaming History**:
-  - live Steam owned-game/history sync through Valve's Web API
-  - encrypted Steam Web API key storage using Windows DPAPI
-  - direct PlayStation Data Access `.xlsx` import
-  - flexible CSV/JSON imports for PlayStation, Xbox/Microsoft, GOG, EA, Ubisoft, Battle.net, Epic, and Steam
-  - historical account snapshots remain separate from installation state
-  - imported account playtime remains separate from launcher-tracked sessions to avoid double counting
-  - idempotent source snapshots keep the greatest known cumulative playtime and latest known last-played timestamp
-  - Gaming History view merges matching titles conservatively while retaining source records
+- Gameplay-only RTSS overlay for FPS, GPU usage, and GPU temperature.
+- Hatchable synchronization for Next 100 ranking, progress, rating, playtime, and last-played state.
+- Hardware-aware Graphics Optimizer with safe preview/backup/apply/restore on verified configurations.
+- Gaming History import from Steam API, PlayStation Data Access Excel, and flexible CSV/JSON account exports.
+- Favorites, search, and All / Favorites / Next Up / Playing library filters.
+- Stats view with launcher-tracked and account-history totals kept separate.
+- Fullscreen Xbox-controller mode:
+  - D-pad: navigate
+  - A: play
+  - Y: favorite/unfavorite
+  - X: cycle All / Favorites / Next Up / Playing
+  - B: exit Controller Mode
+  - keyboard arrows / Enter / F / Tab / Esc are available as fallback controls.
+- ZIP backup of all local launcher data.
+- CSV export of merged Gaming History.
+- GitHub Release update checking and installer download.
+- Per-user Windows installer plus self-contained portable ZIP release artifacts.
 
-## Gaming History setup
+## Install
 
-### Steam
+Official releases are published from this repository.
 
-1. Open **History** > **Steam setup**.
-2. Enter your numeric SteamID64.
-3. Create/copy a Steam Web API key from Valve's API-key page.
-4. Choose whether Steam history should refresh when the launcher starts.
-5. Click **Save & test**.
+Each release can contain:
 
-The Steam API key is encrypted locally for the current Windows user. The launcher never asks for your Steam password.
+- `GameLauncher-Setup.exe` — per-user Windows installer.
+- `GameLauncher-Portable-win-x64.zip` — self-contained portable build.
 
-Steam's `GetOwnedGames` API can return owned games, names, and account playtime when the account's game details are visible.
+The application installs under the current user's Local AppData and does not require administrator rights.
 
-### PlayStation
+## Local data
 
-Sony's current Data Access workflow provides an Excel file.
-
-1. In PlayStation Account Management, request a Data Access download.
-2. Download the resulting `.xlsx` file when Sony makes it available.
-3. In **History**, choose **PlayStation** and **Import account file...**.
-
-The parser only imports worksheets that look like game/title/play history and contain recognizable game-title columns. If Sony changes the workbook or the export does not contain game-history rows, the launcher reports that instead of guessing.
-
-### Other account/store files
-
-For Xbox/Microsoft, GOG, EA, Ubisoft, Battle.net, Epic, or fallback Steam imports, Phase 7 accepts CSV or JSON files with flexible common field names.
-
-Recognized fields include:
-
-- title / game title / game name / product name
-- game ID / AppID / product ID / title ID
-- platform / system / device
-- playtime in seconds, minutes, hours, or duration text
-- last played date/time
-
-If the source export does not use a supported machine-readable format, convert only the relevant game rows to CSV/JSON rather than giving the launcher account passwords or session cookies.
-
-## History data rules
-
-- Account history is not represented as fake local installations.
-- Imported cumulative playtime is not converted into launcher play sessions.
-- Launcher-tracked playtime is shown separately.
-- Re-importing the same source/external ID updates the snapshot instead of duplicating it.
-- A later import cannot reduce previously known cumulative account playtime.
-- A later import cannot move the known last-played timestamp backward.
-- Cross-source title merging uses conservative normalized-title matching only.
-
-## Graphics Optimizer safety
-
-Automatic config editing remains intentionally narrow and reversible. Unsupported games receive recommendations only.
-
-## Gameplay overlay
-
-RTSS must be installed for the in-game OSD. MSI Afterburner is not required.
-
-## Stack
-
-- C# / .NET 10 LTS
-- WPF
-- SQLite via `Microsoft.Data.Sqlite`
-- ClosedXML 0.105.1 for PlayStation Excel imports
-- LibreHardwareMonitorLib 0.9.6
-- RTSS `RTSSSharedMemoryV2`
-- Windows DPAPI via `System.Security.Cryptography.ProtectedData`
-- Hatchable companion web application/API
-
-## Build
-
-Requirements:
-
-- Windows 10/11
-- .NET 10 SDK
-- RTSS installed if you want the gameplay overlay
-
-```powershell
-.\build.ps1
-```
-
-Run:
-
-```powershell
-.\run.ps1
-```
-
-Local launcher data:
+Launcher data remains local under:
 
 ```text
 %LocalAppData%\MyGameLauncher\
 ```
 
+This includes the SQLite database, cached covers, and other launcher-local files.
+
+Use **Tools → Create backup ZIP** before moving PCs or making major changes.
+
+## Updates
+
+**Tools → Check for updates** reads this repository's latest GitHub Release.
+
+If a newer release contains `GameLauncher-Setup.exe`, the launcher can download it and start the installer after explicit confirmation.
+
+## Controller Mode
+
+Use **Controller** from the desktop launcher.
+
+The fullscreen interface is optimized for an Xbox controller and uses Windows XInput directly. No separate controller framework is required.
+
+The fullscreen launcher minimizes while the selected game runs and returns after the tracked session ends.
+
+## Favorites and filtering
+
+Favorites are stored by conservative normalized game title, not by a transient store installation ID. This helps them survive rescans and cross-store merges.
+
+Desktop filters:
+
+- All games
+- Favorites
+- Next Up
+- Playing
+
+Search matches game title, store/source, and synced platform metadata.
+
+## Gaming History
+
+### Steam
+
+Steam owned-game history can sync through Valve's `IPlayerService/GetOwnedGames` Web API.
+
+The launcher stores the Steam Web API key using Windows DPAPI for the current Windows user. It never asks for your Steam password.
+
+### PlayStation
+
+PlayStation Data Access `.xlsx` files can be imported directly when they contain a recognizable game-history worksheet.
+
+### Other stores/accounts
+
+CSV/JSON history files can be imported for Xbox/Microsoft, GOG, EA, Ubisoft, Battle.net, Epic, PlayStation, and Steam fallback workflows.
+
+Imported account playtime is intentionally kept separate from launcher-tracked playtime to avoid pretending the two measurements are non-overlapping.
+
+## Graphics Optimizer
+
+Default target:
+
+- 1920×1080
+- 60 FPS
+- Quality preference
+
+Verified safe automatic config editing remains deliberately narrow. Unsupported games receive recommendations only.
+
+## Gameplay overlay
+
+RTSS must be installed to display the gameplay overlay. MSI Afterburner is not required.
+
+Default OSD:
+
+```text
+FPS 60  |  GPU 73%  |  TEMP 65C
+```
+
+## Build from source
+
+Requirements:
+
+- Windows 10/11
+- .NET 10 SDK
+
+```powershell
+.\build.ps1
+.\run.ps1
+```
+
+## Release process
+
+Push a version tag such as:
+
+```text
+v1.0.0
+```
+
+The release workflow:
+
+1. runs the full tests;
+2. publishes a self-contained `win-x64` build;
+3. creates `GameLauncher-Setup.exe` with Inno Setup;
+4. creates the portable ZIP;
+5. publishes both artifacts as a GitHub Release.
+
 ## Project plan
 
-- Phase 0: Foundation - complete
-- Phase 1: Core MVP - complete
-- Phase 2: Unified Library - complete
-- Phase 3: Smart Launching - complete
-- Phase 4: Gameplay Overlay - complete
-- Phase 5: Hatchable Sync - complete
-- Phase 6: Graphics Optimizer - complete
-- **Phase 7: History + Console Accounts - current**
-- Phase 8: Final Product
+- Phase 0: Foundation — complete
+- Phase 1: Core MVP — complete
+- Phase 2: Unified Library — complete
+- Phase 3: Smart Launching — complete
+- Phase 4: Gameplay Overlay — complete
+- Phase 5: Hatchable Sync — complete
+- Phase 6: Graphics Optimizer — complete
+- Phase 7: History + Console Accounts — complete
+- **Phase 8: Final Product — complete**
 
-See `PHASE7_NOTES.md` for implementation boundaries.
+See `PHASE8_NOTES.md` for implementation and safety boundaries.
 
 ## License
 
