@@ -1,0 +1,154 @@
+<Window x:Class="GameLauncher.App.ControllerModeWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Controller Mode"
+        WindowStyle="None"
+        WindowState="Maximized"
+        ResizeMode="NoResize"
+        Background="#090B0E"
+        Foreground="#F5F7FA"
+        KeyDown="Window_KeyDown">
+    <Grid Margin="34">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="20"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="18"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <StackPanel>
+                <TextBlock Text="MY GAME LAUNCHER" FontSize="13" FontWeight="Bold" Foreground="#8EA8FF"/>
+                <TextBlock x:Name="FilterText" Text="ALL GAMES" Margin="0,4,0,0" FontSize="36" FontWeight="SemiBold"/>
+                <TextBlock x:Name="SummaryText" Margin="0,5,0,0" FontSize="15" Foreground="#9EA6B2"/>
+            </StackPanel>
+            <TextBlock Grid.Column="1"
+                       VerticalAlignment="Bottom"
+                       Foreground="#9EA6B2"
+                       Text="D-pad Navigate   A Play   Y Favorite   X View   B Exit"/>
+        </Grid>
+
+        <ListBox x:Name="GameList"
+                 Grid.Row="2"
+                 Background="Transparent"
+                 BorderThickness="0"
+                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                 ScrollViewer.VerticalScrollBarVisibility="Auto"
+                 SelectionChanged="GameList_SelectionChanged">
+            <ListBox.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <WrapPanel Orientation="Horizontal"/>
+                </ItemsPanelTemplate>
+            </ListBox.ItemsPanel>
+            <ListBox.ItemContainerStyle>
+                <Style TargetType="ListBoxItem">
+                    <Setter Property="Padding" Value="0"/>
+                    <Setter Property="Margin" Value="0,0,18,18"/>
+                    <Setter Property="Background" Value="Transparent"/>
+                    <Setter Property="BorderThickness" Value="0"/>
+                    <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="ListBoxItem">
+                                <Border x:Name="CardBorder"
+                                        Width="198"
+                                        Height="320"
+                                        Padding="10"
+                                        Background="#171B21"
+                                        BorderBrush="#2E3540"
+                                        BorderThickness="2"
+                                        CornerRadius="12">
+                                    <ContentPresenter/>
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsSelected" Value="True">
+                                        <Setter TargetName="CardBorder" Property="BorderBrush" Value="#8EA8FF"/>
+                                        <Setter TargetName="CardBorder" Property="Background" Value="#202633"/>
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
+                </Style>
+            </ListBox.ItemContainerStyle>
+            <ListBox.ItemTemplate>
+                <DataTemplate>
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="220"/>
+                            <RowDefinition Height="10"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+
+                        <Border Grid.Row="0" Background="#242933" CornerRadius="8">
+                            <Grid>
+                                <TextBlock Text="NO COVER"
+                                           HorizontalAlignment="Center"
+                                           VerticalAlignment="Center"
+                                           Foreground="#66717F"
+                                           FontWeight="Bold"/>
+                                <Image Source="{Binding CoverImagePath}" Stretch="UniformToFill"/>
+                                <TextBlock Text="{Binding FavoriteGlyph}"
+                                           HorizontalAlignment="Right"
+                                           VerticalAlignment="Top"
+                                           Margin="8"
+                                           FontSize="24"
+                                           Foreground="#F4C542"/>
+                                <Border HorizontalAlignment="Left"
+                                        VerticalAlignment="Top"
+                                        Margin="8"
+                                        Padding="7,3"
+                                        CornerRadius="5"
+                                        Background="#D9192029">
+                                    <TextBlock Text="{Binding RankBadge}"
+                                               FontSize="10"
+                                               FontWeight="Bold"
+                                               Foreground="#AFC0FF"/>
+                                </Border>
+                            </Grid>
+                        </Border>
+
+                        <TextBlock Grid.Row="2"
+                                   Text="{Binding Title}"
+                                   FontSize="16"
+                                   FontWeight="SemiBold"
+                                   TextTrimming="CharacterEllipsis"/>
+                        <TextBlock Grid.Row="3"
+                                   Text="{Binding Source}"
+                                   Margin="0,3,0,0"
+                                   FontSize="11"
+                                   Foreground="#9EA6B2"
+                                   TextTrimming="CharacterEllipsis"/>
+                        <TextBlock Grid.Row="4"
+                                   Text="{Binding SyncState}"
+                                   Margin="0,3,0,0"
+                                   FontSize="11"
+                                   Foreground="#8EA8FF"/>
+                    </Grid>
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
+
+        <Grid Grid.Row="4">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <TextBlock x:Name="StatusText"
+                       FontSize="14"
+                       Foreground="#9EA6B2"
+                       Text="Ready."/>
+            <TextBlock x:Name="SelectedText"
+                       Grid.Column="1"
+                       FontSize="14"
+                       FontWeight="SemiBold"/>
+        </Grid>
+    </Grid>
+</Window>
