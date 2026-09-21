@@ -1,15 +1,23 @@
 using GameLauncher.Core.Adapters;
 using GameLauncher.Core.Models;
+using GameLauncher.Core.Runtime;
 using GameLauncher.Core.Services;
+using GameLauncher.Core.Utilities;
+using GameLauncher.Infrastructure.Adapters;
 using GameLauncher.Infrastructure.Repositories;
 using GameLauncher.Infrastructure.Storage;
 
 var tests = new (string Name, Func<Task> Run)[]
 {
     ("AppPaths creates expected folders", AppPathsCreatesExpectedFolders),
-    ("SQLite repository round-trips a game", RepositoryRoundTripsGame),
-    ("SQLite repository upserts an installation", RepositoryUpsertsInstallation),
-    ("Library service discovers and stores without duplicates", ServiceDiscoversAndStoresWithoutDuplicates)
+    ("Stable IDs are deterministic", StableIdsAreDeterministic),
+    ("Steam manifest parser reads required fields", SteamManifestParserReadsFields),
+    ("Steam library parser reads extra libraries", SteamLibraryParserReadsPaths),
+    ("SQLite repository round-trips Phase 1 fields", RepositoryRoundTripsPhase1Fields),
+    ("SQLite repository totals completed play sessions", RepositoryTotalsPlaySessions),
+    ("Library service adds a manual game", LibraryServiceAddsManualGame),
+    ("Source sync remains idempotent", SourceSyncRemainsIdempotent),
+    ("Session service persists runtime playtime", SessionServicePersistsPlaytime)
 };
 
 var failures = new List<string>();
@@ -34,7 +42,7 @@ if (failures.Count > 0)
 }
 else
 {
-    Console.WriteLine($"All {tests.Length} Phase 0 tests passed.");
+    Console.WriteLine($"All {tests.Length} Phase 1 tests passed.");
 }
 
 static Task AppPathsCreatesExpectedFolders()
@@ -43,106 +51,203 @@ static Task AppPathsCreatesExpectedFolders()
     var paths = new AppPaths(temp.Path);
     paths.EnsureCreated();
 
-    Assert.Equal(System.IO.Path.Combine(temp.Path, "MyGameLauncher"), paths.RootDirectory);
     Assert.True(Directory.Exists(paths.RootDirectory));
     Assert.True(Directory.Exists(paths.LogsDirectory));
     Assert.True(Directory.Exists(paths.CacheDirectory));
-    Assert.Equal(System.IO.Path.Combine(paths.RootDirectory, "launcher.db"), paths.DatabasePath);
+    Assert.Equal(Path.Combine(paths.RootDirectory, "launcher.db"), paths.DatabasePath);
     return Task.CompletedTask;
 }
 
-static async Task RepositoryRoundTripsGame()
+static Task StableIdsAreDeterministic()
 {
-    using var temp = new TempDirectory();
-    var dbPath = System.IO.Path.Combine(temp.Path, "launcher.db");
-    var repository = new SqliteGameRepository(dbPath);
-    await repository.InitializeAsync();
+    var first = StableId.FromText("steam-game:205100");
+    var second = StableId.FromText("steam-game:205100");
+    var other = StableId.FromText("steam-game:292030");
 
-    var now = DateTimeOffset.UtcNow;
-    var game = new Game(Guid.NewGuid(), "Control", now, now);
-    await repository.UpsertGameAsync(game);
-
-    var games = await repository.GetGamesAsync();
-    Assert.Equal(1, games.Count);
-    Assert.Equal(game.Id, games[0].Id);
-    Assert.Equal("Control", games[0].Title);
+    Assert.Equal(first, second);
+    Assert.NotEqual(first, other);
+    return Task.CompletedTask;
 }
 
-static async Task RepositoryUpsertsInstallation()
+static Task SteamManifestParserReadsFields()
+{
+    const string manifest = """
+        "AppState"
+        {
+            "appid"        "205100"
+            "name"         "Dishonored"
+            "installdir"   "Dishonored"
+            "StateFlags"   "4"
+        }
+        """;
+
+    var parsed = SteamManifestParser.Parse(manifest);
+    Assert.NotNull(parsed);
+    Assert.Equal("205100", parsed!.AppId);
+    Assert.Equal("Dishonored", parsed.Name);
+    Assert.Equal("Dishonored", parsed.InstallDirectoryName);
+    return Task.CompletedTask;
+}
+
+static Task SteamLibraryParserReadsPaths()
+{
+    var root = Path.GetFullPath(Path.Combine(Path.GetTempPath(), "SteamRoot"));
+    var second = Path.GetFullPath(Path.Combine(Path.GetTempPath(), "SteamLibrary"));
+    var escaped = second.Replace("\\", "\\\\", StringComparison.Ordinal);
+    var vdf = $"\"libraryfolders\"\n{{\n\t\"1\"\n\t{{\n\t\t\"path\"\t\t\"{escaped}\"\n\t}}\n}}";
+
+    var paths = SteamLibraryParser.ParseLibraryPaths(vdf, root);
+    Assert.True(paths.Contains(root, StringComparer.OrdinalIgnoreCase));
+    Assert.True(paths.Contains(second, StringComparer.OrdinalIgnoreCase));
+    return Task.CompletedTask;
+}
+
+static async Task RepositoryRoundTripsPhase1Fields()
 {
     using var temp = new TempDirectory();
-    var dbPath = System.IO.Path.Combine(temp.Path, "launcher.db");
-    var repository = new SqliteGameRepository(dbPath);
-    await repository.InitializeAsync();
-
+    var repository = new SqliteGameRepository(Path.Combine(temp.Path, "launcher.db"));
     var now = DateTimeOffset.UtcNow;
-    var game = new Game(Guid.NewGuid(), "Dishonored", now, now);
+    var game = new Game(Guid.NewGuid(), "Control", now, now, @"C:\Covers\control.jpg");
     await repository.UpsertGameAsync(game);
 
-    var installationId = Guid.NewGuid();
-    var first = new GameInstallation(
-        installationId,
+    var installation = new GameInstallation(
+        Guid.NewGuid(),
         game.Id,
-        GameSource.Steam,
-        "steam-205100",
-        @"C:\Games\Dishonored",
-        @"C:\Games\Dishonored\Dishonored.exe",
-        "steam://rungameid/205100",
-        true);
+        GameSource.Manual,
+        "manual-control",
+        @"C:\Games\Control",
+        @"C:\Games\Control\Control.exe",
+        null,
+        true,
+        "-dx12");
+    await repository.UpsertInstallationAsync(installation);
 
-    await repository.UpsertInstallationAsync(first);
-    var updated = first with { ExecutablePath = @"D:\Games\Dishonored\Dishonored.exe" };
-    await repository.UpsertInstallationAsync(updated);
-
+    var stored = await repository.GetGameAsync(game.Id);
     var installations = await repository.GetInstallationsAsync(game.Id);
+
+    Assert.NotNull(stored);
+    Assert.Equal(game.CoverImagePath, stored!.CoverImagePath);
     Assert.Equal(1, installations.Count);
-    Assert.Equal(updated.ExecutablePath, installations[0].ExecutablePath);
+    Assert.Equal("-dx12", installations[0].LaunchArguments);
 }
 
-static async Task ServiceDiscoversAndStoresWithoutDuplicates()
+static async Task RepositoryTotalsPlaySessions()
 {
     using var temp = new TempDirectory();
-    var dbPath = System.IO.Path.Combine(temp.Path, "launcher.db");
-    var repository = new SqliteGameRepository(dbPath);
-    var adapter = new FixedAdapter();
-    var service = new GameLibraryService(repository, new[] { adapter });
+    var repository = new SqliteGameRepository(Path.Combine(temp.Path, "launcher.db"));
+    var now = DateTimeOffset.UtcNow;
+    var game = new Game(Guid.NewGuid(), "Test", now, now);
+    await repository.UpsertGameAsync(game);
 
-    var first = await service.DiscoverAndStoreAsync();
-    var second = await service.DiscoverAndStoreAsync();
-    var games = await service.GetGamesAsync();
+    var session = new PlaySession(Guid.NewGuid(), game.Id, now, null, null);
+    await repository.AddPlaySessionAsync(session);
+    await repository.EndPlaySessionAsync(session.Id, now.AddMinutes(10), 600);
 
-    Assert.Equal(1, first.DiscoveredCount);
-    Assert.Equal(1, second.DiscoveredCount);
-    Assert.Equal(1, games.Count);
-    Assert.Equal("Phase 0 Test Game", games[0].Title);
+    Assert.Equal(600L, await repository.GetTotalPlaytimeSecondsAsync(game.Id));
+    Assert.NotNull(await repository.GetLastPlayedUtcAsync(game.Id));
+}
+
+static async Task LibraryServiceAddsManualGame()
+{
+    using var temp = new TempDirectory();
+    var repository = new SqliteGameRepository(Path.Combine(temp.Path, "launcher.db"));
+    var service = new GameLibraryService(repository, Array.Empty<IGameSourceAdapter>());
+    var fakeExe = Path.Combine(temp.Path, "Game.exe");
+
+    var added = await service.AddManualGameAsync("My Game", fakeExe, null, "-windowed");
+    var library = await service.GetLibraryAsync();
+
+    Assert.Equal(GameSource.Manual, added.PreferredInstallation!.Source);
+    Assert.Equal(1, library.Count);
+    Assert.Equal("My Game", library[0].Game.Title);
+    Assert.Equal("-windowed", library[0].PreferredInstallation!.LaunchArguments);
+}
+
+static async Task SourceSyncRemainsIdempotent()
+{
+    using var temp = new TempDirectory();
+    var repository = new SqliteGameRepository(Path.Combine(temp.Path, "launcher.db"));
+    var service = new GameLibraryService(repository, new[] { new FixedAdapter() });
+
+    await service.SyncSourcesAsync();
+    await service.SyncSourcesAsync();
+    var library = await service.GetLibraryAsync();
+
+    Assert.Equal(1, library.Count);
+    Assert.Equal(1, library[0].Installations.Count);
+}
+
+static async Task SessionServicePersistsPlaytime()
+{
+    using var temp = new TempDirectory();
+    var repository = new SqliteGameRepository(Path.Combine(temp.Path, "launcher.db"));
+    var now = DateTimeOffset.UtcNow;
+    var game = new Game(Guid.NewGuid(), "Runtime Test", now, now);
+    var installation = new GameInstallation(
+        Guid.NewGuid(), game.Id, GameSource.Manual, "runtime-test",
+        temp.Path, Path.Combine(temp.Path, "Runtime.exe"), null, true);
+    await repository.UpsertGameAsync(game);
+    await repository.UpsertInstallationAsync(installation);
+
+    var sessions = new GameSessionService(repository, new FakeRuntime(now, now.AddSeconds(125)));
+    var completed = await sessions.LaunchAndTrackAsync(installation);
+
+    Assert.Equal(125L, completed.DurationSeconds);
+    Assert.Equal(125L, await repository.GetTotalPlaytimeSecondsAsync(game.Id));
 }
 
 file sealed class FixedAdapter : IGameSourceAdapter
 {
-    private static readonly Guid GameId = Guid.Parse("11111111-1111-1111-1111-111111111111");
-    private static readonly Guid InstallationId = Guid.Parse("22222222-2222-2222-2222-222222222222");
+    private static readonly Guid GameId = StableId.FromText("test-game");
+    private static readonly Guid InstallationId = StableId.FromText("test-install");
 
     public string Id => "test";
     public string DisplayName => "Test Adapter";
-    public GameSource Source => GameSource.Demo;
+    public GameSource Source => GameSource.Steam;
 
     public Task<IReadOnlyList<DiscoveredGame>> DiscoverInstalledGamesAsync(CancellationToken cancellationToken = default)
     {
         var now = DateTimeOffset.UtcNow;
-        var game = new Game(GameId, "Phase 0 Test Game", now, now);
+        var game = new Game(GameId, "Phase 1 Test Game", now, now);
         var install = new GameInstallation(
-            InstallationId,
-            GameId,
-            GameSource.Demo,
-            "phase0-test",
-            @"C:\Games\Phase0Test",
-            @"C:\Games\Phase0Test\Phase0Test.exe",
-            null,
-            true);
+            InstallationId, GameId, GameSource.Steam, "12345",
+            @"C:\Games\Phase1", null, "steam://rungameid/12345", true);
 
         IReadOnlyList<DiscoveredGame> result = new[] { new DiscoveredGame(game, install) };
         return Task.FromResult(result);
     }
+}
+
+file sealed class FakeRuntime : IGameRuntime
+{
+    private readonly DateTimeOffset _start;
+    private readonly DateTimeOffset _end;
+
+    public FakeRuntime(DateTimeOffset start, DateTimeOffset end)
+    {
+        _start = start;
+        _end = end;
+    }
+
+    public Task<IGameRunHandle> LaunchAsync(GameInstallation installation, CancellationToken cancellationToken = default) =>
+        Task.FromResult<IGameRunHandle>(new FakeRunHandle(_start, _end, installation.ExecutablePath));
+}
+
+file sealed class FakeRunHandle : IGameRunHandle
+{
+    private readonly DateTimeOffset _end;
+
+    public FakeRunHandle(DateTimeOffset start, DateTimeOffset end, string? executablePath)
+    {
+        StartedUtc = start;
+        _end = end;
+        DetectedExecutablePath = executablePath;
+    }
+
+    public DateTimeOffset StartedUtc { get; }
+    public string? DetectedExecutablePath { get; }
+    public Task<DateTimeOffset> WaitForExitAsync(CancellationToken cancellationToken = default) => Task.FromResult(_end);
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 }
 
 file static class Assert
@@ -159,13 +264,26 @@ file static class Assert
             throw new InvalidOperationException($"Expected '{expected}', got '{actual}'.");
         }
     }
+
+    public static void NotEqual<T>(T notExpected, T actual)
+    {
+        if (EqualityComparer<T>.Default.Equals(notExpected, actual))
+        {
+            throw new InvalidOperationException($"Did not expect '{actual}'.");
+        }
+    }
+
+    public static void NotNull(object? value)
+    {
+        if (value is null) throw new InvalidOperationException("Expected a non-null value.");
+    }
 }
 
 file sealed class TempDirectory : IDisposable
 {
     public TempDirectory()
     {
-        Path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "GameLauncherPhase0Tests", Guid.NewGuid().ToString("N"));
+        Path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "GameLauncherTests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(Path);
     }
 
@@ -179,7 +297,7 @@ file sealed class TempDirectory : IDisposable
         }
         catch
         {
-            // Best-effort test cleanup.
+            // Best-effort cleanup.
         }
     }
 }

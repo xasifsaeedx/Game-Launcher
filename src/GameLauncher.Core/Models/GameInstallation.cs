@@ -8,4 +8,5 @@ public sealed record GameInstallation(
     string? InstallPath,
     string? ExecutablePath,
     string? LaunchUri,
-    bool IsInstalled);
+    bool IsInstalled,
+    string? LaunchArguments = null);
