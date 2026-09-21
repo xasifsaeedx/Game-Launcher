@@ -1061,7 +1061,7 @@ static async Task SteamHistoryApiParsesOwnedGames()
     Assert.Equal(GameSource.Steam, games[0].Source);
     Assert.Equal("1174180", games[0].ExternalId);
     Assert.Equal("Red Dead Redemption 2", games[0].Title);
-    Assert.Equal(7500L, games[0].PlaytimeSeconds);
+    Assert.Equal<long?>(7500L, games[0].PlaytimeSeconds);
     Assert.NotNull(games[0].LastPlayedUtc);
 }
 
@@ -1111,7 +1111,7 @@ static async Task GenericCsvHistoryImporterReadsFlexibleColumns()
     Assert.Equal(GameSource.Gog, games[0].Source);
     Assert.Equal("The Witcher 3", games[0].Title);
     Assert.Equal("witcher3", games[0].ExternalId);
-    Assert.Equal(45000L, games[0].PlaytimeSeconds);
+    Assert.Equal<long?>(45000L, games[0].PlaytimeSeconds);
     Assert.NotNull(games[0].LastPlayedUtc);
 }
 
@@ -1141,7 +1141,7 @@ static async Task GenericJsonHistoryImporterReadsGamesArray()
     Assert.Equal(1, games.Count);
     Assert.Equal("Assassin's Creed Odyssey", games[0].Title);
     Assert.Equal("ac-odyssey", games[0].ExternalId);
-    Assert.Equal(5400L, games[0].PlaytimeSeconds);
+    Assert.Equal<long?>(5400L, games[0].PlaytimeSeconds);
 }
 
 static async Task PlayStationExcelHistoryImporterReadsGameWorksheet()
@@ -1174,7 +1174,7 @@ static async Task PlayStationExcelHistoryImporterReadsGameWorksheet()
     Assert.Equal("Ghost of Tsushima", games[0].Title);
     Assert.Equal("PPSA02225", games[0].ExternalId);
     Assert.Equal("PS5", games[0].Platform);
-    Assert.Equal(152100L, games[0].PlaytimeSeconds);
+    Assert.Equal<long?>(152100L, games[0].PlaytimeSeconds);
     Assert.NotNull(games[0].LastPlayedUtc);
 }
 
@@ -1211,8 +1211,8 @@ static async Task HistoryRepositoryKeepsLargestSnapshot()
 
     var records = await repository.GetBySourceAsync(GameSource.Steam);
     Assert.Equal(1, records.Count);
-    Assert.Equal(7200L, records[0].PlaytimeSeconds);
-    Assert.Equal(now.ToUniversalTime(), records[0].LastPlayedUtc);
+    Assert.Equal<long?>(7200L, records[0].PlaytimeSeconds);
+    Assert.Equal<DateTimeOffset?>(now.ToUniversalTime(), records[0].LastPlayedUtc);
 }
 
 static async Task HistoryServiceKeepsPlaytimeSeparate()
