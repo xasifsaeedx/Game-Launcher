@@ -12,7 +12,9 @@ public sealed record HardwareProfile(
 {
     public string DisplaySummary =>
         DisplayWidth > 0 && DisplayHeight > 0
-            ? $"{DisplayWidth}x{DisplayHeight} @ {Math.Max(1, RefreshRateHz)} Hz"
+            ? RefreshRateHz > 1
+                ? $"{DisplayWidth}x{DisplayHeight} @ {RefreshRateHz} Hz"
+                : $"{DisplayWidth}x{DisplayHeight}"
             : "Display unknown";
 
     public string RamSummary => RamGb > 0 ? $"{RamGb:0.#} GB RAM" : "RAM unknown";
