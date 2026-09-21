@@ -158,7 +158,7 @@ public sealed class SqliteLaunchProfileRepository : ILaunchProfileRepository
         await InitializeAsync(cancellationToken);
 
         await using var connection = await OpenConnectionAsync(cancellationToken);
-        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        using var transaction = connection.BeginTransaction();
 
         await using (var delete = connection.CreateCommand())
         {
@@ -195,7 +195,7 @@ public sealed class SqliteLaunchProfileRepository : ILaunchProfileRepository
             await insert.ExecuteNonQueryAsync(cancellationToken);
         }
 
-        await transaction.CommitAsync(cancellationToken);
+        transaction.Commit();
     }
 
     public async Task DeleteLaunchProfileAsync(
