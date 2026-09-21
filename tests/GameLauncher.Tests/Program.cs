@@ -803,6 +803,12 @@ static Task GraphicsTierRecognizesGtx1660Super()
         GraphicsPerformanceTier.Unknown,
         HardwareTierClassifier.ClassifyGpuName("Future Mystery GPU"));
 
+    Assert.Equal(
+        "Manual",
+        GraphicsRecommendationPolicy.RecommendPreset(
+            GraphicsPerformanceTier.Unknown,
+            GraphicsQualityPreference.Quality));
+
     return Task.CompletedTask;
 }
 
