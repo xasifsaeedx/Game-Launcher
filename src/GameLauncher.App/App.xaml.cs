@@ -3,6 +3,7 @@ using GameLauncher.Core.Adapters;
 using GameLauncher.Core.History;
 using GameLauncher.Core.Services;
 using GameLauncher.Infrastructure.Adapters;
+using GameLauncher.Infrastructure.Backup;
 using GameLauncher.Infrastructure.Graphics;
 using GameLauncher.Infrastructure.Hardware;
 using GameLauncher.Infrastructure.History;
@@ -13,6 +14,7 @@ using GameLauncher.Infrastructure.Runtime;
 using GameLauncher.Infrastructure.Security;
 using GameLauncher.Infrastructure.Storage;
 using GameLauncher.Infrastructure.Sync;
+using GameLauncher.Infrastructure.Update;
 
 namespace GameLauncher.App;
 
@@ -29,6 +31,8 @@ public partial class App : Application
         var launchProfilesRepository = new SqliteLaunchProfileRepository(paths.DatabasePath);
         var overlaySettingsRepository = new SqliteOverlaySettingsRepository(paths.DatabasePath);
         var graphicsRepository = new SqliteGraphicsOptimizerRepository(paths.DatabasePath);
+        var preferencesRepository = new SqliteGamePreferenceRepository(paths.DatabasePath);
+
         var secretProtector = new DpapiSecretProtector();
         var hatchableRepository = new SqliteHatchableSyncRepository(
             paths.DatabasePath,
@@ -87,14 +91,33 @@ public partial class App : Application
             },
             library);
 
+        var preferences = new GamePreferenceService(preferencesRepository);
+        var play = new LauncherPlayService(
+            smartLaunch,
+            graphics,
+            hatchable);
+        var stats = new LauncherStatsService(
+            library,
+            history,
+            preferences,
+            hatchable);
+
+        var backup = new LauncherBackupService();
+        var updates = new GitHubReleaseUpdateService();
+
         var window = new MainWindow(
             library,
-            smartLaunch,
+            play,
             profiles,
             overlay,
             hatchable,
             graphics,
-            history);
+            history,
+            preferences,
+            stats,
+            paths,
+            backup,
+            updates);
         window.Show();
     }
 }

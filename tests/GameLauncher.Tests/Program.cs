@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http;
+using System.IO.Compression;
 using System.Text;
 using System.Xml.Linq;
 using ClosedXML.Excel;
@@ -12,12 +13,14 @@ using GameLauncher.Core.Services;
 using GameLauncher.Core.Sync;
 using GameLauncher.Core.Utilities;
 using GameLauncher.Infrastructure.Adapters;
+using GameLauncher.Infrastructure.Backup;
 using GameLauncher.Infrastructure.Graphics;
 using GameLauncher.Infrastructure.History;
 using GameLauncher.Infrastructure.Metadata;
 using GameLauncher.Infrastructure.Repositories;
 using GameLauncher.Infrastructure.Storage;
 using GameLauncher.Infrastructure.Sync;
+using GameLauncher.Infrastructure.Update;
 using Microsoft.Data.Sqlite;
 
 var tests = new (string Name, Func<Task> Run)[]
@@ -64,6 +67,13 @@ var tests = new (string Name, Func<Task> Run)[]
     ("PlayStation Excel history importer reads game worksheet", PlayStationExcelHistoryImporterReadsGameWorksheet),
     ("History repository keeps largest account snapshot", HistoryRepositoryKeepsLargestSnapshot),
     ("History service keeps account and launcher playtime separate", HistoryServiceKeepsPlaytimeSeparate),
+    ("Game preferences persist favorites", GamePreferencesPersistFavorites),
+    ("Library presentation policy handles search and filters", LibraryPresentationPolicyHandlesSearchAndFilters),
+    ("Launcher backup creates usable ZIP", LauncherBackupCreatesUsableZip),
+    ("History CSV export escapes values", HistoryCsvExportEscapesValues),
+    ("GitHub updater parses latest release", GitHubUpdaterParsesLatestRelease),
+    ("GitHub updater rejects non-HTTPS installer assets", GitHubUpdaterRejectsHttpInstaller),
+    ("GitHub updater downloads installer asset", GitHubUpdaterDownloadsInstaller),
     ("Session service persists runtime playtime", SessionServicePersistsPlaytime)
 };
 
@@ -89,7 +99,7 @@ if (failures.Count > 0)
 }
 else
 {
-    Console.WriteLine($"All {tests.Length} Phase 7 tests passed.");
+    Console.WriteLine($"All {tests.Length} Phase 8 tests passed.");
 }
 
 static Task AppPathsCreatesExpectedFolders()
@@ -1315,6 +1325,226 @@ static async Task HistoryServiceKeepsPlaytimeSeparate()
     Assert.Equal(1, history[0].AccountRecords.Count);
 }
 
+static async Task GamePreferencesPersistFavorites()
+{
+    using var temp = new TempDirectory();
+    var repository = new SqliteGamePreferenceRepository(
+        Path.Combine(temp.Path, "launcher.db"));
+
+    await repository.SetFavoriteAsync("control", true);
+    var first = await repository.GetAsync("control");
+
+    Assert.NotNull(first);
+    Assert.True(first!.IsFavorite);
+
+    await repository.SetFavoriteAsync("control", false);
+    var second = await repository.GetAsync("control");
+
+    Assert.NotNull(second);
+    Assert.True(!second!.IsFavorite);
+    Assert.Equal(1, (await repository.GetAllAsync()).Count);
+}
+
+static Task LibraryPresentationPolicyHandlesSearchAndFilters()
+{
+    var now = DateTimeOffset.UtcNow;
+    var game = new Game(Guid.NewGuid(), "Control Ultimate Edition", now, now);
+    var installation = new GameInstallation(
+        Guid.NewGuid(),
+        game.Id,
+        GameSource.Steam,
+        "870780",
+        @"C:\Games\Control",
+        @"C:\Games\Control\Control.exe",
+        "steam://rungameid/870780",
+        true);
+
+    var item = new GameLibraryItem(
+        game,
+        new[] { installation },
+        0,
+        null);
+
+    var remote = new HatchableRemoteGame(
+        4,
+        "Control: Ultimate Edition",
+        "PC, PS5",
+        870780,
+        null,
+        4,
+        "next",
+        "playing",
+        null,
+        0,
+        null);
+
+    Assert.True(LibraryPresentationPolicy.Matches(
+        item, remote, false, "steam", LibraryFilterMode.All));
+    Assert.True(LibraryPresentationPolicy.Matches(
+        item, remote, true, "control", LibraryFilterMode.Favorites));
+    Assert.True(LibraryPresentationPolicy.Matches(
+        item, remote, false, null, LibraryFilterMode.NextUp));
+    Assert.True(LibraryPresentationPolicy.Matches(
+        item, remote, false, null, LibraryFilterMode.Playing));
+    Assert.True(!LibraryPresentationPolicy.Matches(
+        item, remote, false, "witcher", LibraryFilterMode.All));
+
+    return Task.CompletedTask;
+}
+
+static async Task LauncherBackupCreatesUsableZip()
+{
+    using var temp = new TempDirectory();
+    var paths = new AppPaths(temp.Path);
+    paths.EnsureCreated();
+
+    await File.WriteAllTextAsync(paths.DatabasePath, "database-bytes");
+    var cover = Path.Combine(paths.CoversDirectory, "cover.txt");
+    await File.WriteAllTextAsync(cover, "cover-bytes");
+
+    var destination = Path.Combine(temp.Path, "backup.zip");
+    var service = new LauncherBackupService();
+    await service.CreateBackupAsync(paths, destination);
+
+    Assert.True(File.Exists(destination));
+
+    using var archive = ZipFile.OpenRead(destination);
+    var entries = archive.Entries
+        .Select(x => x.FullName.Replace('\\', '/'))
+        .ToArray();
+
+    Assert.True(entries.Contains("launcher.db"));
+    Assert.True(entries.Contains("cache/covers/cover.txt"));
+}
+
+static async Task HistoryCsvExportEscapesValues()
+{
+    using var temp = new TempDirectory();
+    var destination = Path.Combine(temp.Path, "history.csv");
+    var now = DateTimeOffset.UtcNow;
+
+    GamingHistoryItem[] history =
+    [
+        new(
+            "Game, \"Deluxe\"",
+            new[]
+            {
+                new GameHistoryRecord(
+                    Guid.NewGuid(),
+                    GameSource.PlayStation,
+                    "ps-test",
+                    "Game, \"Deluxe\"",
+                    "PS5",
+                    3600,
+                    now,
+                    now)
+            },
+            false,
+            120,
+            now)
+    ];
+
+    var service = new LauncherBackupService();
+    await service.ExportHistoryCsvAsync(history, destination);
+
+    var text = await File.ReadAllTextAsync(destination);
+    Assert.True(text.Contains("\"Game, \"\"Deluxe\"\"\"", StringComparison.Ordinal));
+    Assert.True(text.Contains(",3600,120,", StringComparison.Ordinal));
+}
+
+static async Task GitHubUpdaterParsesLatestRelease()
+{
+    const string json =
+        """
+        {
+          "tag_name": "v1.1.0",
+          "name": "My Game Launcher v1.1.0",
+          "html_url": "https://github.com/xasifsaeedx/Game-Launcher/releases/tag/v1.1.0",
+          "assets": [
+            {
+              "name": "GameLauncher-Setup.exe",
+              "browser_download_url": "https://example.test/GameLauncher-Setup.exe"
+            }
+          ]
+        }
+        """;
+
+    using var http = new HttpClient(
+        new RoutingHttpHandler(Encoding.UTF8.GetBytes(json), [1, 2, 3]));
+    var service = new GitHubReleaseUpdateService(http);
+
+    var update = await service.CheckAsync(new Version(1, 0, 0));
+
+    Assert.True(update.IsUpdateAvailable);
+    Assert.Equal(new Version(1, 1, 0), update.LatestVersion);
+    Assert.NotNull(update.InstallerDownload);
+    Assert.Equal("GameLauncher-Setup.exe", Path.GetFileName(update.InstallerDownload!.AbsolutePath));
+}
+
+static async Task GitHubUpdaterRejectsHttpInstaller()
+{
+    const string json =
+        """
+        {
+          "tag_name": "v1.1.0",
+          "name": "My Game Launcher v1.1.0",
+          "html_url": "http://example.test/release",
+          "assets": [
+            {
+              "name": "GameLauncher-Setup.exe",
+              "browser_download_url": "http://example.test/GameLauncher-Setup.exe"
+            }
+          ]
+        }
+        """;
+
+    using var http = new HttpClient(
+        new RoutingHttpHandler(Encoding.UTF8.GetBytes(json), [1, 2, 3]));
+    var service = new GitHubReleaseUpdateService(http);
+    var update = await service.CheckAsync(new Version(1, 0, 0));
+
+    Assert.True(update.IsUpdateAvailable);
+    Assert.True(update.InstallerDownload is null);
+    Assert.Equal(
+        "https://github.com/xasifsaeedx/Game-Launcher/releases",
+        update.ReleasePage.ToString().TrimEnd('/'));
+}
+
+static async Task GitHubUpdaterDownloadsInstaller()
+{
+    const string json =
+        """
+        {
+          "tag_name": "v1.1.0",
+          "name": "My Game Launcher v1.1.0",
+          "html_url": "https://github.com/xasifsaeedx/Game-Launcher/releases/tag/v1.1.0",
+          "assets": [
+            {
+              "name": "GameLauncher-Setup.exe",
+              "browser_download_url": "https://example.test/GameLauncher-Setup.exe"
+            }
+          ]
+        }
+        """;
+
+    byte[] installer = [10, 20, 30, 40, 50];
+    using var http = new HttpClient(
+        new RoutingHttpHandler(Encoding.UTF8.GetBytes(json), installer));
+    var service = new GitHubReleaseUpdateService(http);
+    var update = await service.CheckAsync(new Version(1, 0, 0));
+
+    var path = await service.DownloadInstallerAsync(update);
+    try
+    {
+        Assert.True(File.Exists(path));
+        Assert.SequenceEqual(installer, await File.ReadAllBytesAsync(path));
+    }
+    finally
+    {
+        try { if (File.Exists(path)) File.Delete(path); } catch { }
+    }
+}
+
 static async Task SessionServicePersistsPlaytime()
 {
     using var temp = new TempDirectory();
@@ -1813,6 +2043,37 @@ file sealed class RecordingHatchableApiClient : IHatchableApiClient
         }).ToArray();
 
         return Task.FromResult(games.Count);
+    }
+}
+
+file sealed class RoutingHttpHandler : HttpMessageHandler
+{
+    private readonly byte[] _releaseJson;
+    private readonly byte[] _installer;
+
+    public RoutingHttpHandler(
+        byte[] releaseJson,
+        byte[] installer)
+    {
+        _releaseJson = releaseJson;
+        _installer = installer;
+    }
+
+    protected override Task<HttpResponseMessage> SendAsync(
+        HttpRequestMessage request,
+        CancellationToken cancellationToken)
+    {
+        var isInstaller =
+            request.RequestUri?.AbsolutePath.EndsWith(
+                "GameLauncher-Setup.exe",
+                StringComparison.OrdinalIgnoreCase) == true;
+
+        return Task.FromResult(
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new ByteArrayContent(
+                    isInstaller ? _installer : _releaseJson)
+            });
     }
 }
 

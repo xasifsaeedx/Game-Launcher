@@ -2,38 +2,69 @@ using System.Windows;
 using System.Windows.Controls;
 using GameLauncher.Core.Models;
 using GameLauncher.Core.Services;
+using GameLauncher.Core.Update;
+using GameLauncher.Infrastructure.Backup;
+using GameLauncher.Infrastructure.Storage;
 
 namespace GameLauncher.App;
 
 public partial class MainWindow : Window
 {
     private readonly GameLibraryService _library;
-    private readonly SmartLaunchService _smartLaunch;
+    private readonly LauncherPlayService _play;
     private readonly LaunchProfileService _profiles;
     private readonly GameplayOverlayService _overlay;
     private readonly HatchableSyncService _hatchable;
     private readonly GraphicsOptimizerService _graphics;
     private readonly GameHistoryService _history;
+    private readonly GamePreferenceService _preferences;
+    private readonly LauncherStatsService _stats;
+    private readonly AppPaths _paths;
+    private readonly LauncherBackupService _backup;
+    private readonly ILauncherUpdateService _updates;
     private readonly CancellationTokenSource _lifetime = new();
+
     private IReadOnlyList<GameCardViewModel> _cards = Array.Empty<GameCardViewModel>();
+    private readonly FilterChoice[] _filters =
+    [
+        new(LibraryFilterMode.All, "All games"),
+        new(LibraryFilterMode.Favorites, "Favorites"),
+        new(LibraryFilterMode.NextUp, "Next Up"),
+        new(LibraryFilterMode.Playing, "Playing")
+    ];
 
     public MainWindow(
         GameLibraryService library,
-        SmartLaunchService smartLaunch,
+        LauncherPlayService play,
         LaunchProfileService profiles,
         GameplayOverlayService overlay,
         HatchableSyncService hatchable,
         GraphicsOptimizerService graphics,
-        GameHistoryService history)
+        GameHistoryService history,
+        GamePreferenceService preferences,
+        LauncherStatsService stats,
+        AppPaths paths,
+        LauncherBackupService backup,
+        ILauncherUpdateService updates)
     {
         InitializeComponent();
+
         _library = library ?? throw new ArgumentNullException(nameof(library));
-        _smartLaunch = smartLaunch ?? throw new ArgumentNullException(nameof(smartLaunch));
+        _play = play ?? throw new ArgumentNullException(nameof(play));
         _profiles = profiles ?? throw new ArgumentNullException(nameof(profiles));
         _overlay = overlay ?? throw new ArgumentNullException(nameof(overlay));
         _hatchable = hatchable ?? throw new ArgumentNullException(nameof(hatchable));
         _graphics = graphics ?? throw new ArgumentNullException(nameof(graphics));
         _history = history ?? throw new ArgumentNullException(nameof(history));
+        _preferences = preferences ?? throw new ArgumentNullException(nameof(preferences));
+        _stats = stats ?? throw new ArgumentNullException(nameof(stats));
+        _paths = paths ?? throw new ArgumentNullException(nameof(paths));
+        _backup = backup ?? throw new ArgumentNullException(nameof(backup));
+        _updates = updates ?? throw new ArgumentNullException(nameof(updates));
+
+        FilterComboBox.ItemsSource = _filters;
+        FilterComboBox.SelectedIndex = 0;
+
         Loaded += MainWindow_Loaded;
         Closed += (_, _) => _lifetime.Cancel();
     }
@@ -42,6 +73,44 @@ public partial class MainWindow : Window
     {
         Loaded -= MainWindow_Loaded;
         await SyncAndRefreshAsync();
+    }
+
+    private async void ControllerButton_Click(object sender, RoutedEventArgs e)
+    {
+        var window = new ControllerModeWindow(
+            _library,
+            _hatchable,
+            _preferences,
+            _play);
+
+        Hide();
+        try
+        {
+            window.ShowDialog();
+        }
+        finally
+        {
+            Show();
+            Activate();
+            await RefreshLibraryAsync();
+        }
+    }
+
+    private void StatsButton_Click(object sender, RoutedEventArgs e)
+    {
+        new StatsWindow(_stats) { Owner = this }.ShowDialog();
+    }
+
+    private void ToolsButton_Click(object sender, RoutedEventArgs e)
+    {
+        new MaintenanceWindow(
+            _paths,
+            _backup,
+            _history,
+            _updates)
+        {
+            Owner = this
+        }.ShowDialog();
     }
 
     private void HistoryButton_Click(object sender, RoutedEventArgs e)
@@ -108,6 +177,7 @@ public partial class MainWindow : Window
     private async void PlayButton_Click(object sender, RoutedEventArgs e)
     {
         if (sender is not Button button || button.Tag is not Guid gameId) return;
+
         var card = _cards.FirstOrDefault(x => x.GameId == gameId);
         if (card?.Installation is null)
         {
@@ -118,20 +188,14 @@ public partial class MainWindow : Window
         button.IsEnabled = false;
         try
         {
-            var graphicsWarning = await TryAutoGraphicsApplyAsync(card.Item);
             StatusText.Text = $"Launching {card.Title}...";
-
-            var completed = await _smartLaunch.LaunchAsync(
-                card.Item,
-                cancellationToken: _lifetime.Token);
-
-            var syncWarning = await TryAutoHatchableSyncAsync();
+            var result = await _play.LaunchAsync(card.Item, _lifetime.Token);
             await RefreshLibraryAsync();
 
             StatusText.Text =
-                $"{card.Title} session saved ({GameCardViewModel.FormatPlaytime(completed.DurationSeconds ?? 0)})." +
-                (graphicsWarning is null ? string.Empty : $" Graphics: {graphicsWarning}") +
-                (syncWarning is null ? string.Empty : $" Hatchable: {syncWarning}");
+                $"{card.Title} session saved ({GameCardViewModel.FormatPlaytime(result.Session.DurationSeconds ?? 0)})." +
+                (result.GraphicsWarning is null ? string.Empty : $" Graphics: {result.GraphicsWarning}") +
+                (result.HatchableWarning is null ? string.Empty : $" Hatchable: {result.HatchableWarning}");
         }
         catch (OperationCanceledException)
         {
@@ -147,6 +211,28 @@ public partial class MainWindow : Window
         }
     }
 
+    private async void FavoriteButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button button || button.Tag is not Guid gameId) return;
+        var card = _cards.FirstOrDefault(x => x.GameId == gameId);
+        if (card is null) return;
+
+        try
+        {
+            var favorite = await _preferences.ToggleFavoriteAsync(
+                card.Item,
+                _lifetime.Token);
+            await RefreshLibraryAsync();
+            StatusText.Text = favorite
+                ? $"Added {card.Title} to favorites."
+                : $"Removed {card.Title} from favorites.";
+        }
+        catch (Exception ex)
+        {
+            StatusText.Text = $"Could not update favorite: {ex.Message}";
+        }
+    }
+
     private void ProfilesButton_Click(object sender, RoutedEventArgs e)
     {
         if (sender is not Button button || button.Tag is not Guid gameId) return;
@@ -156,39 +242,51 @@ public partial class MainWindow : Window
         new LaunchProfileWindow(card.Item, _profiles) { Owner = this }.ShowDialog();
     }
 
-    private async Task<string?> TryAutoGraphicsApplyAsync(GameLibraryItem item)
+    private void SearchTextBox_TextChanged(object sender, TextChangedEventArgs e) =>
+        ApplyLibraryView();
+
+    private void FilterComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e) =>
+        ApplyLibraryView();
+
+    private void ApplyLibraryView()
     {
-        try
-        {
-            if (!await _graphics.ShouldAutoApplyBeforeLaunchAsync(_lifetime.Token))
-            {
-                return null;
-            }
+        if (GameGrid is null || SearchTextBox is null || FilterComboBox is null) return;
 
-            var recommendation = await _graphics.RecommendAsync(item, _lifetime.Token);
-            if (!recommendation.CanApplyAutomatically)
-            {
-                return null;
-            }
+        var filter = FilterComboBox.SelectedItem is FilterChoice choice
+            ? choice.Mode
+            : LibraryFilterMode.All;
+        var search = SearchTextBox.Text;
 
-            var result = await _graphics.ApplySafeSettingsAsync(item, _lifetime.Token);
-            return result.Warnings.Count == 0
-                ? null
-                : string.Join(" ", result.Warnings);
-        }
-        catch (OperationCanceledException)
+        var shown = _cards
+            .Where(card => LibraryPresentationPolicy.Matches(
+                card.Item,
+                card.Hatchable,
+                card.IsFavorite,
+                search,
+                filter));
+
+        shown = filter == LibraryFilterMode.NextUp
+            ? shown
+                .OrderBy(card =>
+                    LibraryPresentationPolicy.NextUpSortKey(card.Hatchable))
+                .ThenBy(card => card.Title, StringComparer.OrdinalIgnoreCase)
+            : shown.OrderBy(card => card.Title, StringComparer.OrdinalIgnoreCase);
+
+        var array = shown.ToArray();
+        GameGrid.ItemsSource = array;
+
+        if (_cards.Count > 0)
         {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            return ex.Message;
+            StatusText.Text = array.Length == _cards.Count
+                ? "Ready."
+                : $"Showing {array.Length} of {_cards.Count} installed game(s).";
         }
     }
 
     private async Task SyncAndRefreshAsync()
     {
         SyncLibraryButton.IsEnabled = false;
+
         try
         {
             StatusText.Text = "Scanning installed game libraries...";
@@ -202,7 +300,7 @@ public partial class MainWindow : Window
                 : $" {result.Warnings.Count} source/artwork warning(s).";
 
             StatusText.Text =
-                $"Library sync complete: {result.DiscoveredCount} installation(s) discovered, " +
+                $"Library sync complete: {result.DiscoveredCount} installation(s), " +
                 $"{result.MetadataUpdatedCount} cover(s) added.{warningSuffix}" +
                 (hatchableWarning is null ? string.Empty : $" Hatchable: {hatchableWarning}") +
                 (historyWarning is null ? string.Empty : $" Steam history: {historyWarning}");
@@ -270,22 +368,33 @@ public partial class MainWindow : Window
     {
         var items = await _library.GetLibraryAsync(_lifetime.Token);
         var remote = await _hatchable.GetCachedGamesAsync(_lifetime.Token);
+        var favorites = await _preferences.GetFavoriteKeysAsync(_lifetime.Token);
 
         _cards = items
-            .Select(item => new GameCardViewModel(
-                item,
-                HatchableSyncService.FindMatch(item, remote)))
+            .Select(item =>
+            {
+                var hatchable = HatchableSyncService.FindMatch(item, remote);
+                var favorite = favorites.Contains(
+                    GamePreferenceService.GetGameKey(item.Game.Title));
+                return new GameCardViewModel(item, hatchable, favorite);
+            })
             .ToArray();
 
-        GameGrid.ItemsSource = _cards;
+        ApplyLibraryView();
 
         var totalSeconds = items.Sum(x => x.TotalPlaytimeSeconds);
         var installs = items.Sum(x => x.Installations.Count);
         var ranked = _cards.Count(x => x.Hatchable is not null);
+        var favoriteCount = _cards.Count(x => x.IsFavorite);
 
         LibrarySummaryText.Text =
             $"{items.Count} game(s)  •  {installs} installation(s)  •  " +
-            $"{GameCardViewModel.FormatPlaytime(totalSeconds)} tracked" +
+            $"{GameCardViewModel.FormatPlaytime(totalSeconds)} tracked  •  " +
+            $"{favoriteCount} favorite(s)" +
             (remote.Count == 0 ? string.Empty : $"  •  {ranked} matched to Next 100");
     }
+
+    private sealed record FilterChoice(
+        LibraryFilterMode Mode,
+        string Label);
 }

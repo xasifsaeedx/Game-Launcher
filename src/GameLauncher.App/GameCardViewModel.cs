@@ -6,7 +6,8 @@ public sealed class GameCardViewModel
 {
     public GameCardViewModel(
         GameLibraryItem item,
-        HatchableRemoteGame? hatchable = null)
+        HatchableRemoteGame? hatchable = null,
+        bool isFavorite = false)
     {
         Item = item;
         GameId = item.Game.Id;
@@ -22,6 +23,8 @@ public sealed class GameCardViewModel
 
         Playtime = FormatPlaytime(item.TotalPlaytimeSeconds);
         Hatchable = hatchable;
+        IsFavorite = isFavorite;
+        FavoriteGlyph = isFavorite ? "★" : "☆";
         RankBadge = hatchable is null ? string.Empty : $"NEXT #{hatchable.RankScore}";
         SyncState = hatchable is null
             ? string.Empty
@@ -36,6 +39,8 @@ public sealed class GameCardViewModel
     public string Source { get; }
     public string Playtime { get; }
     public HatchableRemoteGame? Hatchable { get; }
+    public bool IsFavorite { get; }
+    public string FavoriteGlyph { get; }
     public string RankBadge { get; }
     public string SyncState { get; }
 
