@@ -22,8 +22,8 @@ public sealed class LauncherBackupService
         var temporary = destinationZip + ".tmp";
         if (File.Exists(temporary)) File.Delete(temporary);
 
-        await using var output = File.Create(temporary);
-        using (var archive = new ZipArchive(output, ZipArchiveMode.Create, leaveOpen: true))
+        await using (var output = File.Create(temporary))
+        using (var archive = new ZipArchive(output, ZipArchiveMode.Create, leaveOpen: false))
         {
             foreach (var file in Directory.EnumerateFiles(
                          paths.RootDirectory,
