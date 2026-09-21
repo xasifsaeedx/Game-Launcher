@@ -31,6 +31,7 @@
             </StackPanel>
 
             <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Bottom">
+                <Button Content="Overlay" Margin="0,0,8,0" Click="OverlayButton_Click"/>
                 <Button x:Name="SyncLibraryButton" Content="Sync Library" Margin="0,0,8,0" Click="SyncLibraryButton_Click"/>
                 <Button Content="+ Add game" FontWeight="SemiBold" Click="AddGameButton_Click"/>
             </StackPanel>
@@ -104,7 +105,7 @@
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
             <TextBlock x:Name="StatusText" VerticalAlignment="Center" Foreground="#9EA6B2" Text="Ready."/>
-            <TextBlock Grid.Column="1" VerticalAlignment="Center" Foreground="#59616D" Text="Phase 3"/>
+            <TextBlock Grid.Column="1" VerticalAlignment="Center" Foreground="#59616D" Text="Phase 4"/>
         </Grid>
     </Grid>
 </Window>

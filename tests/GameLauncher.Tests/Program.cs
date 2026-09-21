@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http;
 using GameLauncher.Core.Adapters;
 using GameLauncher.Core.Models;
+using GameLauncher.Core.Repositories;
 using GameLauncher.Core.Runtime;
 using GameLauncher.Core.Services;
 using GameLauncher.Core.Utilities;
@@ -30,6 +31,10 @@ var tests = new (string Name, Func<Task> Run)[]
     ("Launch profile repository persists profile and actions", LaunchProfileRepositoryPersistsProfileAndActions),
     ("Launch profile service keeps one default across merged installs", LaunchProfileServiceKeepsOneDefault),
     ("Smart launch orders actions and cleans companions", SmartLaunchOrdersActionsAndCleansCompanions),
+    ("Overlay formatter emits requested telemetry", OverlayFormatterEmitsRequestedTelemetry),
+    ("Overlay settings persist and normalize", OverlaySettingsPersistAndNormalize),
+    ("Overlay service skips disabled overlay", OverlayServiceSkipsDisabledOverlay),
+    ("Session service owns overlay lifecycle", SessionServiceOwnsOverlayLifecycle),
     ("Session service persists runtime playtime", SessionServicePersistsPlaytime)
 };
 
@@ -55,7 +60,7 @@ if (failures.Count > 0)
 }
 else
 {
-    Console.WriteLine($"All {tests.Length} Phase 3 tests passed.");
+    Console.WriteLine($"All {tests.Length} Phase 4 tests passed.");
 }
 
 static Task AppPathsCreatesExpectedFolders()
@@ -500,6 +505,93 @@ static async Task SmartLaunchOrdersActionsAndCleansCompanions()
     Assert.Equal<string?>(null, gameRuntime.LastInstallation.LaunchUri);
 }
 
+static Task OverlayFormatterEmitsRequestedTelemetry()
+{
+    var settings = new OverlaySettings(true, true, true, true, 500);
+    var text = OverlayTextFormatter.Format(
+        settings,
+        new OverlayMetrics(59.6, 73.2, 64.8));
+
+    Assert.Equal("FPS 60  |  GPU 73%  |  TEMP 65C", text);
+
+    var gpuOnly = OverlayTextFormatter.Format(
+        settings with { ShowFps = false, ShowGpuTemperature = false },
+        new OverlayMetrics(120, 51.4, 70));
+
+    Assert.Equal("GPU 51%", gpuOnly);
+    return Task.CompletedTask;
+}
+
+static async Task OverlaySettingsPersistAndNormalize()
+{
+    using var temp = new TempDirectory();
+    var repository = new SqliteOverlaySettingsRepository(
+        Path.Combine(temp.Path, "launcher.db"));
+
+    await repository.SaveAsync(
+        new OverlaySettings(true, true, false, true, 50));
+
+    var stored = await repository.GetAsync();
+
+    Assert.True(stored.Enabled);
+    Assert.True(stored.ShowFps);
+    Assert.True(!stored.ShowGpuUsage);
+    Assert.True(stored.ShowGpuTemperature);
+    Assert.Equal(250, stored.UpdateIntervalMs);
+}
+
+static async Task OverlayServiceSkipsDisabledOverlay()
+{
+    var settings = new MemoryOverlaySettingsRepository(
+        new OverlaySettings(false, true, true, true, 500));
+    var runtime = new RecordingOverlayRuntime(new List<string>());
+    var service = new GameplayOverlayService(settings, runtime);
+
+    await using var session = await service.StartForGameAsync(1234);
+
+    Assert.Equal(0, runtime.StartCount);
+}
+
+static async Task SessionServiceOwnsOverlayLifecycle()
+{
+    using var temp = new TempDirectory();
+    var repository = new SqliteGameRepository(Path.Combine(temp.Path, "launcher.db"));
+    var events = new List<string>();
+    var now = DateTimeOffset.UtcNow;
+
+    var game = new Game(Guid.NewGuid(), "Overlay Lifecycle", now, now);
+    var installation = new GameInstallation(
+        Guid.NewGuid(),
+        game.Id,
+        GameSource.Manual,
+        "overlay-lifecycle",
+        temp.Path,
+        Path.Combine(temp.Path, "Game.exe"),
+        null,
+        true);
+
+    await repository.UpsertGameAsync(game);
+    await repository.UpsertInstallationAsync(installation);
+
+    var settings = new MemoryOverlaySettingsRepository(OverlaySettings.Default);
+    var overlayRuntime = new RecordingOverlayRuntime(events);
+    var overlay = new GameplayOverlayService(settings, overlayRuntime);
+    var runtime = new OverlayAwareGameRuntime(events, now, now.AddSeconds(10));
+    var sessions = new GameSessionService(repository, runtime, overlay);
+
+    await sessions.LaunchAndTrackAsync(installation);
+
+    Assert.SequenceEqual(
+        new[]
+        {
+            "game:start",
+            "overlay:start:4242",
+            "game:wait",
+            "overlay:dispose"
+        },
+        events);
+}
+
 static async Task SessionServicePersistsPlaytime()
 {
     using var temp = new TempDirectory();
@@ -675,6 +767,7 @@ file sealed class RecordingGameRunHandle : IGameRunHandle
     }
 
     public DateTimeOffset StartedUtc { get; }
+    public int? ProcessId => 1001;
     public string? DetectedExecutablePath { get; }
 
     public Task<DateTimeOffset> WaitForExitAsync(
@@ -736,6 +829,125 @@ file sealed class RecordingExternalHandle : IExternalProgramHandle
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 }
 
+file sealed class MemoryOverlaySettingsRepository : IOverlaySettingsRepository
+{
+    private OverlaySettings _settings;
+
+    public MemoryOverlaySettingsRepository(OverlaySettings settings)
+    {
+        _settings = settings;
+    }
+
+    public Task<OverlaySettings> GetAsync(CancellationToken cancellationToken = default) =>
+        Task.FromResult(_settings);
+
+    public Task SaveAsync(
+        OverlaySettings settings,
+        CancellationToken cancellationToken = default)
+    {
+        _settings = settings.Normalize();
+        return Task.CompletedTask;
+    }
+}
+
+file sealed class RecordingOverlayRuntime : IGameplayOverlayRuntime
+{
+    private readonly List<string> _events;
+
+    public RecordingOverlayRuntime(List<string> events)
+    {
+        _events = events;
+    }
+
+    public int StartCount { get; private set; }
+
+    public Task<IOverlaySession> StartAsync(
+        int processId,
+        OverlaySettings settings,
+        CancellationToken cancellationToken = default)
+    {
+        StartCount++;
+        _events.Add($"overlay:start:{processId}");
+        return Task.FromResult<IOverlaySession>(
+            new RecordingOverlaySession(_events));
+    }
+
+    public Task<OverlayRuntimeStatus> GetStatusAsync(
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult(new OverlayRuntimeStatus(true, "ready"));
+}
+
+file sealed class RecordingOverlaySession : IOverlaySession
+{
+    private readonly List<string> _events;
+
+    public RecordingOverlaySession(List<string> events)
+    {
+        _events = events;
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        _events.Add("overlay:dispose");
+        return ValueTask.CompletedTask;
+    }
+}
+
+file sealed class OverlayAwareGameRuntime : IGameRuntime
+{
+    private readonly List<string> _events;
+    private readonly DateTimeOffset _start;
+    private readonly DateTimeOffset _end;
+
+    public OverlayAwareGameRuntime(
+        List<string> events,
+        DateTimeOffset start,
+        DateTimeOffset end)
+    {
+        _events = events;
+        _start = start;
+        _end = end;
+    }
+
+    public Task<IGameRunHandle> LaunchAsync(
+        GameInstallation installation,
+        CancellationToken cancellationToken = default)
+    {
+        _events.Add("game:start");
+        return Task.FromResult<IGameRunHandle>(
+            new OverlayAwareGameRunHandle(_events, _start, _end));
+    }
+}
+
+file sealed class OverlayAwareGameRunHandle : IGameRunHandle
+{
+    private readonly List<string> _events;
+    private readonly DateTimeOffset _end;
+
+    public OverlayAwareGameRunHandle(
+        List<string> events,
+        DateTimeOffset start,
+        DateTimeOffset end)
+    {
+        _events = events;
+        StartedUtc = start;
+        _end = end;
+    }
+
+    public DateTimeOffset StartedUtc { get; }
+    public int? ProcessId => 4242;
+    public string? DetectedExecutablePath => @"C:\Games\Overlay\Game.exe";
+
+    public Task<DateTimeOffset> WaitForExitAsync(
+        CancellationToken cancellationToken = default)
+    {
+        _events.Add("game:wait");
+        return Task.FromResult(_end);
+    }
+
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+}
+
 file sealed class FakeRuntime : IGameRuntime
 {
     private readonly DateTimeOffset _start;
@@ -766,6 +978,7 @@ file sealed class FakeRunHandle : IGameRunHandle
     }
 
     public DateTimeOffset StartedUtc { get; }
+    public int? ProcessId => 1002;
     public string? DetectedExecutablePath { get; }
 
     public Task<DateTimeOffset> WaitForExitAsync(

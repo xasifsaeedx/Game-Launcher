@@ -3,6 +3,7 @@ using GameLauncher.Core.Adapters;
 using GameLauncher.Core.Services;
 using GameLauncher.Infrastructure.Adapters;
 using GameLauncher.Infrastructure.Metadata;
+using GameLauncher.Infrastructure.Overlay;
 using GameLauncher.Infrastructure.Repositories;
 using GameLauncher.Infrastructure.Runtime;
 using GameLauncher.Infrastructure.Storage;
@@ -20,6 +21,7 @@ public partial class App : Application
 
         var repository = new SqliteGameRepository(paths.DatabasePath);
         var launchProfilesRepository = new SqliteLaunchProfileRepository(paths.DatabasePath);
+        var overlaySettingsRepository = new SqliteOverlaySettingsRepository(paths.DatabasePath);
 
         IGameSourceAdapter[] adapters =
         [
@@ -34,14 +36,20 @@ public partial class App : Application
 
         var metadata = new SteamArtworkMetadataEnricher(paths.CoversDirectory);
         var library = new GameLibraryService(repository, adapters, metadata);
-        var sessions = new GameSessionService(repository, new WindowsGameRuntime());
+        var overlay = new GameplayOverlayService(
+            overlaySettingsRepository,
+            new RtssGameplayOverlayRuntime());
+        var sessions = new GameSessionService(
+            repository,
+            new WindowsGameRuntime(),
+            overlay);
         var profiles = new LaunchProfileService(launchProfilesRepository);
         var smartLaunch = new SmartLaunchService(
             profiles,
             sessions,
             new WindowsExternalProgramRuntime());
 
-        var window = new MainWindow(library, smartLaunch, profiles);
+        var window = new MainWindow(library, smartLaunch, profiles, overlay);
         window.Show();
     }
 }

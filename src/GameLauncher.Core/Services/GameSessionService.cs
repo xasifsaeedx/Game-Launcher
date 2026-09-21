@@ -9,12 +9,17 @@ public sealed class GameSessionService
 {
     private readonly IGameRepository _repository;
     private readonly IGameRuntime _runtime;
+    private readonly GameplayOverlayService? _overlay;
     private readonly ConcurrentDictionary<Guid, byte> _runningGames = new();
 
-    public GameSessionService(IGameRepository repository, IGameRuntime runtime)
+    public GameSessionService(
+        IGameRepository repository,
+        IGameRuntime runtime,
+        GameplayOverlayService? overlay = null)
     {
         _repository = repository ?? throw new ArgumentNullException(nameof(repository));
         _runtime = runtime ?? throw new ArgumentNullException(nameof(runtime));
+        _overlay = overlay;
     }
 
     public bool IsRunning(Guid gameId) => _runningGames.ContainsKey(gameId);
@@ -34,6 +39,9 @@ public sealed class GameSessionService
         {
             await _repository.InitializeAsync(cancellationToken);
             await using var handle = await _runtime.LaunchAsync(installation, cancellationToken);
+            await using var overlaySession = _overlay is null
+                ? null
+                : await _overlay.StartForGameAsync(handle.ProcessId, cancellationToken);
 
             var session = new PlaySession(
                 Guid.NewGuid(),

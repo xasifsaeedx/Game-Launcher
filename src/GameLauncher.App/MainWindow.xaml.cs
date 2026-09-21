@@ -9,18 +9,21 @@ public partial class MainWindow : Window
     private readonly GameLibraryService _library;
     private readonly SmartLaunchService _smartLaunch;
     private readonly LaunchProfileService _profiles;
+    private readonly GameplayOverlayService _overlay;
     private readonly CancellationTokenSource _lifetime = new();
     private IReadOnlyList<GameCardViewModel> _cards = Array.Empty<GameCardViewModel>();
 
     public MainWindow(
         GameLibraryService library,
         SmartLaunchService smartLaunch,
-        LaunchProfileService profiles)
+        LaunchProfileService profiles,
+        GameplayOverlayService overlay)
     {
         InitializeComponent();
         _library = library ?? throw new ArgumentNullException(nameof(library));
         _smartLaunch = smartLaunch ?? throw new ArgumentNullException(nameof(smartLaunch));
         _profiles = profiles ?? throw new ArgumentNullException(nameof(profiles));
+        _overlay = overlay ?? throw new ArgumentNullException(nameof(overlay));
         Loaded += MainWindow_Loaded;
         Closed += (_, _) => _lifetime.Cancel();
     }
@@ -29,6 +32,15 @@ public partial class MainWindow : Window
     {
         Loaded -= MainWindow_Loaded;
         await SyncAndRefreshAsync();
+    }
+
+    private void OverlayButton_Click(object sender, RoutedEventArgs e)
+    {
+        var window = new OverlaySettingsWindow(_overlay)
+        {
+            Owner = this
+        };
+        window.ShowDialog();
     }
 
     private async void SyncLibraryButton_Click(object sender, RoutedEventArgs e)
@@ -74,7 +86,10 @@ public partial class MainWindow : Window
         try
         {
             StatusText.Text = $"Launching {card.Title}...";
-            var completed = await _smartLaunch.LaunchAsync(card.Item, cancellationToken: _lifetime.Token);
+            var completed = await _smartLaunch.LaunchAsync(
+                card.Item,
+                cancellationToken: _lifetime.Token);
+
             await RefreshLibraryAsync();
             StatusText.Text =
                 $"{card.Title} session saved ({GameCardViewModel.FormatPlaytime(completed.DurationSeconds ?? 0)}).";

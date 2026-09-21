@@ -7,14 +7,27 @@ internal sealed class WindowsGameRunHandle : IGameRunHandle
 {
     private readonly Process _process;
 
-    public WindowsGameRunHandle(Process process, DateTimeOffset startedUtc, string? detectedExecutablePath)
+    public WindowsGameRunHandle(
+        Process process,
+        DateTimeOffset startedUtc,
+        string? detectedExecutablePath)
     {
         _process = process ?? throw new ArgumentNullException(nameof(process));
         StartedUtc = startedUtc;
         DetectedExecutablePath = detectedExecutablePath;
+
+        try
+        {
+            ProcessId = process.Id;
+        }
+        catch
+        {
+            ProcessId = null;
+        }
     }
 
     public DateTimeOffset StartedUtc { get; }
+    public int? ProcessId { get; }
     public string? DetectedExecutablePath { get; }
 
     public async Task<DateTimeOffset> WaitForExitAsync(CancellationToken cancellationToken = default)

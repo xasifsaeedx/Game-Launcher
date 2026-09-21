@@ -1,0 +1,84 @@
+<Window x:Class="GameLauncher.App.OverlaySettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Gameplay Overlay"
+        Width="560"
+        Height="470"
+        ResizeMode="NoResize"
+        WindowStartupLocation="CenterOwner"
+        Background="#0E1014"
+        Foreground="#F5F7FA">
+    <Grid Margin="24">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="18"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="14"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="14"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <StackPanel Grid.Row="0">
+            <TextBlock Text="GAMEPLAY OVERLAY" FontSize="11" FontWeight="SemiBold" Foreground="#8E96A3"/>
+            <TextBlock Text="FPS + GPU telemetry" Margin="0,3,0,0" FontSize="26" FontWeight="SemiBold"/>
+            <TextBlock Text="Shown through RTSS only while a tracked game is running."
+                       Margin="0,5,0,0" Foreground="#9EA6B2"/>
+        </StackPanel>
+
+        <Border Grid.Row="2" Background="#181B21" CornerRadius="10" Padding="16">
+            <StackPanel>
+                <CheckBox x:Name="EnabledCheckBox"
+                          Content="Enable gameplay overlay"
+                          FontWeight="SemiBold"
+                          Margin="0,0,0,12"/>
+                <CheckBox x:Name="FpsCheckBox" Content="FPS" Margin="18,0,0,9"/>
+                <CheckBox x:Name="GpuUsageCheckBox" Content="GPU usage" Margin="18,0,0,9"/>
+                <CheckBox x:Name="GpuTemperatureCheckBox" Content="GPU temperature" Margin="18,0,0,0"/>
+            </StackPanel>
+        </Border>
+
+        <Border Grid.Row="4" Background="#181B21" CornerRadius="10" Padding="16">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <StackPanel>
+                    <TextBlock Text="Update interval" FontWeight="SemiBold"/>
+                    <TextBlock Text="500 ms is the default and keeps overhead low."
+                               Margin="0,4,0,0" FontSize="11" Foreground="#8E96A3"/>
+                </StackPanel>
+                <ComboBox x:Name="IntervalComboBox"
+                          Grid.Column="1"
+                          Width="110"
+                          Padding="6"
+                          DisplayMemberPath="Label"
+                          SelectedValuePath="Value"/>
+            </Grid>
+        </Border>
+
+        <Border Grid.Row="6" Background="#181B21" CornerRadius="10" Padding="16">
+            <StackPanel>
+                <TextBlock Text="RTSS status" FontWeight="SemiBold"/>
+                <TextBlock x:Name="RtssStatusText"
+                           Margin="0,5,0,0"
+                           Foreground="#9EA6B2"
+                           TextWrapping="Wrap"
+                           Text="Checking..."/>
+                <TextBlock x:Name="RtssPathText"
+                           Margin="0,4,0,0"
+                           FontSize="11"
+                           Foreground="#657080"
+                           TextWrapping="Wrap"/>
+            </StackPanel>
+        </Border>
+
+        <StackPanel Grid.Row="8" Orientation="Horizontal" HorizontalAlignment="Right">
+            <Button Content="Close" Margin="0,0,8,0" Click="Close_Click"/>
+            <Button Content="Save" FontWeight="SemiBold" Click="Save_Click"/>
+        </StackPanel>
+    </Grid>
+</Window>
