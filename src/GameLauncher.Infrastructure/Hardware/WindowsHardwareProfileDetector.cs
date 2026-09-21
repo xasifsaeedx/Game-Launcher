@@ -58,7 +58,9 @@ public sealed class WindowsHardwareProfileDetector : IHardwareProfileDetector
 
             var candidates = computer.Hardware
                 .Where(x => x.HardwareType is HardwareType.GpuNvidia or HardwareType.GpuAmd or HardwareType.GpuIntel)
-                .OrderBy(x => x.HardwareType == HardwareType.GpuIntel ? 1 : 0)
+                .OrderBy(x => IsLikelyIntegratedGpu(x) ? 1 : 0)
+                .ThenByDescending(x => x.HardwareType == HardwareType.GpuNvidia ? 2 :
+                                       x.HardwareType == HardwareType.GpuAmd ? 1 : 0)
                 .ToArray();
 
             return candidates.FirstOrDefault()?.Name?.Trim() ?? "Unknown GPU";
@@ -98,15 +100,24 @@ public sealed class WindowsHardwareProfileDetector : IHardwareProfileDetector
 
         try
         {
+            var refresh = GetDeviceCaps(dc, 116);
             return (
                 GetDeviceCaps(dc, 8),
                 GetDeviceCaps(dc, 10),
-                GetDeviceCaps(dc, 116));
+                refresh > 1 ? refresh : 0);
         }
         finally
         {
             ReleaseDC(IntPtr.Zero, dc);
         }
+    }
+
+    private static bool IsLikelyIntegratedGpu(IHardware hardware)
+    {
+        var name = hardware.Name ?? string.Empty;
+        return hardware.HardwareType == HardwareType.GpuIntel ||
+               name.Contains("Radeon Graphics", StringComparison.OrdinalIgnoreCase) ||
+               name.Contains("Integrated", StringComparison.OrdinalIgnoreCase);
     }
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
