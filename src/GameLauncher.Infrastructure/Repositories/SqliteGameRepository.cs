@@ -246,6 +246,23 @@ public sealed class SqliteGameRepository : IGameRepository
         return installations;
     }
 
+    public async Task MarkSourceInstallationsNotInstalledAsync(
+        GameSource source,
+        CancellationToken cancellationToken = default)
+    {
+        await InitializeAsync(cancellationToken);
+
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE game_installations
+            SET is_installed = 0
+            WHERE source = $source;
+            """;
+        command.Parameters.AddWithValue("$source", (int)source);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
     public async Task AddPlaySessionAsync(PlaySession session, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(session);

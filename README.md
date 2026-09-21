@@ -1,24 +1,35 @@
 # Game Launcher
 
-A lightweight, open-source Windows game launcher built around a local unified library. Current implementation: **Phase 1 - Core MVP**.
+A lightweight, open-source Windows game launcher built around a local unified library. Current implementation: **Phase 2 - Unified Library**.
 
 ## Current features
 
 - Manual game library entries.
-- Automatic installed Steam-game discovery from local Steam files.
-- Launch manual games and Steam games.
-- Detect the launched game process and track session playtime.
+- Automatic installed-game discovery for:
+  - Steam
+  - Epic Games
+  - GOG
+  - EA app
+  - Ubisoft Connect
+  - Battle.net
+  - Xbox / Microsoft Store games using the modern `XboxGames` install layout
+- Conservative cross-store duplicate reconciliation using normalized exact titles.
+- Launch games from their discovered executable or launcher URI.
+- Detect launched game processes and track session playtime.
 - Persist library and play sessions in local SQLite.
-- Optional manual cover images.
-- Basic WPF cover-grid library UI.
-- Repeated Steam sync without duplicate Steam records.
+- Automatic cover-art caching:
+  - direct Steam library artwork for Steam games
+  - exact-title Steam Store lookup as a credential-free fallback for matching non-Steam games
+  - local artwork discovered inside game folders when available
+- Basic WPF cover-grid unified library UI showing all detected sources for a title.
 
 ## Stack
 
 - C# / .NET 10 LTS
 - WPF
 - SQLite via `Microsoft.Data.Sqlite`
-- No ORM, DI framework, MVVM framework, dynamic plugin loader, or web service dependency.
+- Local Windows registry/manifests for launcher discovery
+- No ORM, DI framework, MVVM framework, account credentials, or private launcher APIs.
 
 ## Build
 
@@ -34,23 +45,31 @@ Run the launcher:
 .\run.ps1
 ```
 
-The app stores its local data under:
+Local data:
 
 ```text
 %LocalAppData%\MyGameLauncher\
 ```
 
-## Phase 1 behavior
+Downloaded covers are cached under:
 
-On startup the launcher checks the local Steam installation and reads Steam library manifests. Steam launch uses `steam://rungameid/<appid>`. Because Steam manifests do not reliably provide a game executable, the launcher detects the newly started process located under that game's Steam installation folder and then records the session until that process exits.
+```text
+%LocalAppData%\MyGameLauncher\cache\covers\
+```
 
-Manual games use the executable selected when the game is added.
+## Discovery notes
+
+Discovery is intentionally local-first and credential-free. The launcher reads installed-game manifests, registry entries, or install layouts already present on the PC.
+
+Xbox / Microsoft Store coverage targets games installed through the modern Xbox app layout under an `XboxGames` folder. It does not scrape protected `WindowsApps` UWP packages.
+
+Cross-store merging is conservative: only strong normalized-title equality is merged automatically. Different editions such as `Control` and `Control Ultimate Edition` remain separate.
 
 ## Project plan
 
 - Phase 0: Foundation - complete
-- **Phase 1: Core MVP - current**
-- Phase 2: Unified Library
+- Phase 1: Core MVP - complete
+- **Phase 2: Unified Library - current**
 - Phase 3: Smart Launching
 - Phase 4: Gameplay Overlay
 - Phase 5: Hatchable Sync
@@ -58,7 +77,7 @@ Manual games use the executable selected when the game is added.
 - Phase 7: History + Console Accounts
 - Phase 8: Final Product
 
-See `PHASE1_NOTES.md` for current implementation boundaries.
+See `PHASE2_NOTES.md` for implementation boundaries.
 
 ## License
 
