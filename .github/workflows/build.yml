@@ -18,5 +18,5 @@ jobs:
         run: dotnet restore .\GameLauncher.sln
       - name: Build
         run: dotnet build .\GameLauncher.sln -c Release --no-restore
-      - name: Phase 2 tests
+      - name: Phase 3 tests
         run: dotnet run --project .\tests\GameLauncher.Tests\GameLauncher.Tests.csproj -c Release --no-build

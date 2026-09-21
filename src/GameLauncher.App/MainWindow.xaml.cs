@@ -7,15 +7,20 @@ namespace GameLauncher.App;
 public partial class MainWindow : Window
 {
     private readonly GameLibraryService _library;
-    private readonly GameSessionService _sessions;
+    private readonly SmartLaunchService _smartLaunch;
+    private readonly LaunchProfileService _profiles;
     private readonly CancellationTokenSource _lifetime = new();
     private IReadOnlyList<GameCardViewModel> _cards = Array.Empty<GameCardViewModel>();
 
-    public MainWindow(GameLibraryService library, GameSessionService sessions)
+    public MainWindow(
+        GameLibraryService library,
+        SmartLaunchService smartLaunch,
+        LaunchProfileService profiles)
     {
         InitializeComponent();
         _library = library ?? throw new ArgumentNullException(nameof(library));
-        _sessions = sessions ?? throw new ArgumentNullException(nameof(sessions));
+        _smartLaunch = smartLaunch ?? throw new ArgumentNullException(nameof(smartLaunch));
+        _profiles = profiles ?? throw new ArgumentNullException(nameof(profiles));
         Loaded += MainWindow_Loaded;
         Closed += (_, _) => _lifetime.Cancel();
     }
@@ -69,9 +74,10 @@ public partial class MainWindow : Window
         try
         {
             StatusText.Text = $"Launching {card.Title}...";
-            var completed = await _sessions.LaunchAndTrackAsync(card.Installation, _lifetime.Token);
+            var completed = await _smartLaunch.LaunchAsync(card.Item, cancellationToken: _lifetime.Token);
             await RefreshLibraryAsync();
-            StatusText.Text = $"{card.Title} session saved ({GameCardViewModel.FormatPlaytime(completed.DurationSeconds ?? 0)}).";
+            StatusText.Text =
+                $"{card.Title} session saved ({GameCardViewModel.FormatPlaytime(completed.DurationSeconds ?? 0)}).";
         }
         catch (OperationCanceledException)
         {
@@ -85,6 +91,19 @@ public partial class MainWindow : Window
         {
             button.IsEnabled = true;
         }
+    }
+
+    private void ProfilesButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button button || button.Tag is not Guid gameId) return;
+        var card = _cards.FirstOrDefault(x => x.GameId == gameId);
+        if (card is null) return;
+
+        var window = new LaunchProfileWindow(card.Item, _profiles)
+        {
+            Owner = this
+        };
+        window.ShowDialog();
     }
 
     private async Task SyncAndRefreshAsync()
