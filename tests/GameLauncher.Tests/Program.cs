@@ -1,9 +1,12 @@
+using System.Net;
+using System.Net.Http;
 using GameLauncher.Core.Adapters;
 using GameLauncher.Core.Models;
 using GameLauncher.Core.Runtime;
 using GameLauncher.Core.Services;
 using GameLauncher.Core.Utilities;
 using GameLauncher.Infrastructure.Adapters;
+using GameLauncher.Infrastructure.Metadata;
 using GameLauncher.Infrastructure.Repositories;
 using GameLauncher.Infrastructure.Storage;
 
@@ -11,12 +14,18 @@ var tests = new (string Name, Func<Task> Run)[]
 {
     ("AppPaths creates expected folders", AppPathsCreatesExpectedFolders),
     ("Stable IDs are deterministic", StableIdsAreDeterministic),
+    ("Title normalization is conservative", TitleNormalizationIsConservative),
     ("Steam manifest parser reads required fields", SteamManifestParserReadsFields),
     ("Steam library parser reads extra libraries", SteamLibraryParserReadsPaths),
-    ("SQLite repository round-trips Phase 1 fields", RepositoryRoundTripsPhase1Fields),
+    ("Epic manifest parser reads installed game metadata", EpicManifestParserReadsFields),
+    ("Epic adapter discovers local installation", EpicAdapterDiscoversInstallation),
+    ("Xbox adapter discovers XboxGames installation", XboxAdapterDiscoversInstallation),
+    ("SQLite repository round-trips launcher fields", RepositoryRoundTripsFields),
     ("SQLite repository totals completed play sessions", RepositoryTotalsPlaySessions),
     ("Library service adds a manual game", LibraryServiceAddsManualGame),
     ("Source sync remains idempotent", SourceSyncRemainsIdempotent),
+    ("Unified library merges exact normalized titles", UnifiedLibraryMergesExactTitles),
+    ("Steam artwork enricher caches cover art", SteamArtworkEnricherCachesCover),
     ("Session service persists runtime playtime", SessionServicePersistsPlaytime)
 };
 
@@ -42,7 +51,7 @@ if (failures.Count > 0)
 }
 else
 {
-    Console.WriteLine($"All {tests.Length} Phase 1 tests passed.");
+    Console.WriteLine($"All {tests.Length} Phase 2 tests passed.");
 }
 
 static Task AppPathsCreatesExpectedFolders()
@@ -54,6 +63,7 @@ static Task AppPathsCreatesExpectedFolders()
     Assert.True(Directory.Exists(paths.RootDirectory));
     Assert.True(Directory.Exists(paths.LogsDirectory));
     Assert.True(Directory.Exists(paths.CacheDirectory));
+    Assert.True(Directory.Exists(paths.CoversDirectory));
     Assert.Equal(Path.Combine(paths.RootDirectory, "launcher.db"), paths.DatabasePath);
     return Task.CompletedTask;
 }
@@ -66,6 +76,16 @@ static Task StableIdsAreDeterministic()
 
     Assert.Equal(first, second);
     Assert.NotEqual(first, other);
+    return Task.CompletedTask;
+}
+
+static Task TitleNormalizationIsConservative()
+{
+    Assert.Equal("control", GameTitleNormalizer.Normalize("Control™"));
+    Assert.Equal("control", GameTitleNormalizer.Normalize("CONTROL [PC]"));
+    Assert.NotEqual(
+        GameTitleNormalizer.Normalize("Control"),
+        GameTitleNormalizer.Normalize("Control Ultimate Edition"));
     return Task.CompletedTask;
 }
 
@@ -102,7 +122,75 @@ static Task SteamLibraryParserReadsPaths()
     return Task.CompletedTask;
 }
 
-static async Task RepositoryRoundTripsPhase1Fields()
+static Task EpicManifestParserReadsFields()
+{
+    const string json = """
+        {
+          "DisplayName": "Control",
+          "InstallLocation": "C:\\Epic\\Control",
+          "AppName": "ControlApp",
+          "CatalogItemId": "catalog-control",
+          "LaunchExecutable": "Control.exe",
+          "LaunchCommand": "-EpicPortal"
+        }
+        """;
+
+    var parsed = EpicGameSourceAdapter.ParseManifest(json);
+    Assert.NotNull(parsed);
+    Assert.Equal("Control", parsed!.DisplayName);
+    Assert.Equal("ControlApp", parsed.AppName);
+    Assert.Equal("catalog-control", parsed.CatalogItemId);
+    return Task.CompletedTask;
+}
+
+static async Task EpicAdapterDiscoversInstallation()
+{
+    using var temp = new TempDirectory();
+    var install = Path.Combine(temp.Path, "EpicLibrary", "Control");
+    Directory.CreateDirectory(install);
+    File.WriteAllText(Path.Combine(install, "Control.exe"), string.Empty);
+
+    var manifestDir = Path.Combine(
+        temp.Path, "Epic", "EpicGamesLauncher", "Data", "Manifests");
+    Directory.CreateDirectory(manifestDir);
+
+    var escapedInstall = install.Replace("\\", "\\\\", StringComparison.Ordinal);
+    File.WriteAllText(
+        Path.Combine(manifestDir, "control.item"),
+        $$"""
+        {
+          "DisplayName": "Control",
+          "InstallLocation": "{{escapedInstall}}",
+          "AppName": "ControlApp",
+          "CatalogItemId": "catalog-control",
+          "LaunchExecutable": "Control.exe"
+        }
+        """);
+
+    var adapter = new EpicGameSourceAdapter(temp.Path);
+    var games = await adapter.DiscoverInstalledGamesAsync();
+
+    Assert.Equal(1, games.Count);
+    Assert.Equal(GameSource.Epic, games[0].Installation.Source);
+    Assert.Equal("Control", games[0].Game.Title);
+}
+
+static async Task XboxAdapterDiscoversInstallation()
+{
+    using var temp = new TempDirectory();
+    var content = Path.Combine(temp.Path, "XboxGames", "Forza Horizon 5", "Content");
+    Directory.CreateDirectory(content);
+    File.WriteAllText(Path.Combine(content, "gamelaunchhelper.exe"), string.Empty);
+
+    var adapter = new XboxGameSourceAdapter(new[] { temp.Path });
+    var games = await adapter.DiscoverInstalledGamesAsync();
+
+    Assert.Equal(1, games.Count);
+    Assert.Equal("Forza Horizon 5", games[0].Game.Title);
+    Assert.Equal(GameSource.Xbox, games[0].Installation.Source);
+}
+
+static async Task RepositoryRoundTripsFields()
 {
     using var temp = new TempDirectory();
     var repository = new SqliteGameRepository(Path.Combine(temp.Path, "launcher.db"));
@@ -167,7 +255,8 @@ static async Task SourceSyncRemainsIdempotent()
 {
     using var temp = new TempDirectory();
     var repository = new SqliteGameRepository(Path.Combine(temp.Path, "launcher.db"));
-    var service = new GameLibraryService(repository, new[] { new FixedAdapter() });
+    var adapter = FixedAdapter.Create("steam", GameSource.Steam, "12345", "Phase 2 Test Game");
+    var service = new GameLibraryService(repository, new[] { adapter });
 
     await service.SyncSourcesAsync();
     await service.SyncSourcesAsync();
@@ -175,6 +264,42 @@ static async Task SourceSyncRemainsIdempotent()
 
     Assert.Equal(1, library.Count);
     Assert.Equal(1, library[0].Installations.Count);
+}
+
+static async Task UnifiedLibraryMergesExactTitles()
+{
+    using var temp = new TempDirectory();
+    var repository = new SqliteGameRepository(Path.Combine(temp.Path, "launcher.db"));
+
+    var steam = FixedAdapter.Create("steam", GameSource.Steam, "870780", "Control™");
+    var epic = FixedAdapter.Create("epic", GameSource.Epic, "control-epic", "CONTROL [PC]");
+    var service = new GameLibraryService(repository, new IGameSourceAdapter[] { steam, epic });
+
+    await service.SyncSourcesAsync();
+    var library = await service.GetLibraryAsync();
+
+    Assert.Equal(1, library.Count);
+    Assert.Equal(2, library[0].Installations.Count);
+    Assert.True(library[0].Installations.Any(x => x.Source == GameSource.Steam));
+    Assert.True(library[0].Installations.Any(x => x.Source == GameSource.Epic));
+}
+
+static async Task SteamArtworkEnricherCachesCover()
+{
+    using var temp = new TempDirectory();
+    var client = new HttpClient(new StaticHttpHandler(new byte[2048]));
+    var enricher = new SteamArtworkMetadataEnricher(temp.Path, client);
+
+    var now = DateTimeOffset.UtcNow;
+    var game = new Game(Guid.NewGuid(), "Control", now, now);
+    var install = new GameInstallation(
+        Guid.NewGuid(), game.Id, GameSource.Steam, "870780",
+        @"C:\Steam\Control", null, "steam://rungameid/870780", true);
+
+    var enriched = await enricher.EnrichAsync(game, new[] { install });
+
+    Assert.NotNull(enriched.CoverImagePath);
+    Assert.True(File.Exists(enriched.CoverImagePath!));
 }
 
 static async Task SessionServicePersistsPlaytime()
@@ -198,23 +323,59 @@ static async Task SessionServicePersistsPlaytime()
 
 file sealed class FixedAdapter : IGameSourceAdapter
 {
-    private static readonly Guid GameId = StableId.FromText("test-game");
-    private static readonly Guid InstallationId = StableId.FromText("test-install");
+    private readonly DiscoveredGame _game;
 
-    public string Id => "test";
-    public string DisplayName => "Test Adapter";
-    public GameSource Source => GameSource.Steam;
-
-    public Task<IReadOnlyList<DiscoveredGame>> DiscoverInstalledGamesAsync(CancellationToken cancellationToken = default)
+    private FixedAdapter(string id, GameSource source, string externalId, string title)
     {
-        var now = DateTimeOffset.UtcNow;
-        var game = new Game(GameId, "Phase 1 Test Game", now, now);
-        var install = new GameInstallation(
-            InstallationId, GameId, GameSource.Steam, "12345",
-            @"C:\Games\Phase1", null, "steam://rungameid/12345", true);
+        Id = id;
+        Source = source;
+        DisplayName = id;
 
-        IReadOnlyList<DiscoveredGame> result = new[] { new DiscoveredGame(game, install) };
-        return Task.FromResult(result);
+        var gameId = StableId.FromText($"{id}-game:{externalId}");
+        var installId = StableId.FromText($"{id}-install:{externalId}");
+        var now = DateTimeOffset.UtcNow;
+
+        _game = new DiscoveredGame(
+            new Game(gameId, title, now, now),
+            new GameInstallation(
+                installId, gameId, source, externalId,
+                $@"C:\Games\{id}\{externalId}",
+                null,
+                source == GameSource.Steam ? $"steam://rungameid/{externalId}" : null,
+                true));
+    }
+
+    public string Id { get; }
+    public string DisplayName { get; }
+    public GameSource Source { get; }
+
+    public static FixedAdapter Create(string id, GameSource source, string externalId, string title) =>
+        new(id, source, externalId, title);
+
+    public Task<IReadOnlyList<DiscoveredGame>> DiscoverInstalledGamesAsync(
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult<IReadOnlyList<DiscoveredGame>>(new[] { _game });
+}
+
+file sealed class StaticHttpHandler : HttpMessageHandler
+{
+    private readonly byte[] _content;
+
+    public StaticHttpHandler(byte[] content)
+    {
+        _content = content;
+    }
+
+    protected override Task<HttpResponseMessage> SendAsync(
+        HttpRequestMessage request,
+        CancellationToken cancellationToken)
+    {
+        var response = new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new ByteArrayContent(_content)
+        };
+
+        return Task.FromResult(response);
     }
 }
 
@@ -229,8 +390,11 @@ file sealed class FakeRuntime : IGameRuntime
         _end = end;
     }
 
-    public Task<IGameRunHandle> LaunchAsync(GameInstallation installation, CancellationToken cancellationToken = default) =>
-        Task.FromResult<IGameRunHandle>(new FakeRunHandle(_start, _end, installation.ExecutablePath));
+    public Task<IGameRunHandle> LaunchAsync(
+        GameInstallation installation,
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult<IGameRunHandle>(
+            new FakeRunHandle(_start, _end, installation.ExecutablePath));
 }
 
 file sealed class FakeRunHandle : IGameRunHandle
@@ -246,7 +410,11 @@ file sealed class FakeRunHandle : IGameRunHandle
 
     public DateTimeOffset StartedUtc { get; }
     public string? DetectedExecutablePath { get; }
-    public Task<DateTimeOffset> WaitForExitAsync(CancellationToken cancellationToken = default) => Task.FromResult(_end);
+
+    public Task<DateTimeOffset> WaitForExitAsync(
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult(_end);
+
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 }
 
@@ -283,7 +451,10 @@ file sealed class TempDirectory : IDisposable
 {
     public TempDirectory()
     {
-        Path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "GameLauncherTests", Guid.NewGuid().ToString("N"));
+        Path = System.IO.Path.Combine(
+            System.IO.Path.GetTempPath(),
+            "GameLauncherTests",
+            Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(Path);
     }
 

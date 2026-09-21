@@ -26,12 +26,12 @@
 
             <StackPanel>
                 <TextBlock Text="MY GAME LAUNCHER" FontSize="11" FontWeight="SemiBold" Foreground="#8E96A3"/>
-                <TextBlock Text="Library" Margin="0,3,0,0" FontSize="30" FontWeight="SemiBold"/>
+                <TextBlock Text="Unified Library" Margin="0,3,0,0" FontSize="30" FontWeight="SemiBold"/>
                 <TextBlock x:Name="LibrarySummaryText" Margin="0,5,0,0" Foreground="#9EA6B2" Text="Loading library..."/>
             </StackPanel>
 
             <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Bottom">
-                <Button x:Name="SyncSteamButton" Content="Sync Steam" Margin="0,0,8,0" Click="SyncSteamButton_Click"/>
+                <Button x:Name="SyncLibraryButton" Content="Sync Library" Margin="0,0,8,0" Click="SyncLibraryButton_Click"/>
                 <Button Content="+ Add game" FontWeight="SemiBold" Click="AddGameButton_Click"/>
             </StackPanel>
         </Grid>
@@ -68,7 +68,8 @@
                                 <TextBlock Grid.Row="2" Text="{Binding Title}" FontSize="15" FontWeight="SemiBold"
                                            TextTrimming="CharacterEllipsis" ToolTip="{Binding Title}"/>
                                 <StackPanel Grid.Row="3" Orientation="Horizontal" Margin="0,4,0,0">
-                                    <TextBlock Text="{Binding Source}" FontSize="11" Foreground="#8E96A3"/>
+                                    <TextBlock Text="{Binding Source}" FontSize="11" Foreground="#8E96A3"
+                                               TextTrimming="CharacterEllipsis" MaxWidth="105"/>
                                     <TextBlock Text="  •  " FontSize="11" Foreground="#59616D"/>
                                     <TextBlock Text="{Binding Playtime}" FontSize="11" Foreground="#8E96A3"/>
                                 </StackPanel>
@@ -88,7 +89,7 @@
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
             <TextBlock x:Name="StatusText" VerticalAlignment="Center" Foreground="#9EA6B2" Text="Ready."/>
-            <TextBlock Grid.Column="1" VerticalAlignment="Center" Foreground="#59616D" Text="Phase 1"/>
+            <TextBlock Grid.Column="1" VerticalAlignment="Center" Foreground="#59616D" Text="Phase 2"/>
         </Grid>
     </Grid>
 </Window>

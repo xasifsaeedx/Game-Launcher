@@ -11,7 +11,13 @@ public sealed class GameCardViewModel
         Title = item.Game.Title;
         CoverImagePath = item.Game.CoverImagePath;
         Installation = item.PreferredInstallation;
-        Source = Installation?.Source.ToString() ?? "Unknown";
+
+        Source = string.Join(
+            " + ",
+            item.Installations
+                .Select(x => DisplaySource(x.Source))
+                .Distinct(StringComparer.OrdinalIgnoreCase));
+
         Playtime = FormatPlaytime(item.TotalPlaytimeSeconds);
     }
 
@@ -30,4 +36,14 @@ public sealed class GameCardViewModel
         if (span.TotalHours < 1) return $"{Math.Max(1, (int)span.TotalMinutes)} min";
         return $"{span.TotalHours:0.#} h";
     }
+
+    private static string DisplaySource(GameSource source) => source switch
+    {
+        GameSource.Gog => "GOG",
+        GameSource.EA => "EA",
+        GameSource.BattleNet => "Battle.net",
+        GameSource.MicrosoftStore => "Microsoft Store",
+        GameSource.Xbox => "Xbox",
+        _ => source.ToString()
+    };
 }

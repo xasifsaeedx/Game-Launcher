@@ -26,7 +26,7 @@ public partial class MainWindow : Window
         await SyncAndRefreshAsync();
     }
 
-    private async void SyncSteamButton_Click(object sender, RoutedEventArgs e)
+    private async void SyncLibraryButton_Click(object sender, RoutedEventArgs e)
     {
         await SyncAndRefreshAsync();
     }
@@ -89,28 +89,33 @@ public partial class MainWindow : Window
 
     private async Task SyncAndRefreshAsync()
     {
-        SyncSteamButton.IsEnabled = false;
+        SyncLibraryButton.IsEnabled = false;
         try
         {
-            StatusText.Text = "Scanning installed Steam games...";
+            StatusText.Text = "Scanning installed game libraries...";
             var result = await _library.SyncSourcesAsync(_lifetime.Token);
             await RefreshLibraryAsync();
-            StatusText.Text = result.DiscoveredCount == 0
-                ? "Steam scan complete. No installed Steam manifests were found."
-                : $"Steam scan complete: {result.DiscoveredCount} installed game(s) found.";
+
+            var warningSuffix = result.Warnings.Count == 0
+                ? string.Empty
+                : $" {result.Warnings.Count} source/artwork warning(s).";
+
+            StatusText.Text =
+                $"Library sync complete: {result.DiscoveredCount} installation(s) discovered, " +
+                $"{result.MetadataUpdatedCount} cover(s) added.{warningSuffix}";
         }
         catch (OperationCanceledException)
         {
-            StatusText.Text = "Steam scan cancelled.";
+            StatusText.Text = "Library scan cancelled.";
         }
         catch (Exception ex)
         {
-            StatusText.Text = $"Steam scan failed: {ex.Message}";
+            StatusText.Text = $"Library scan failed: {ex.Message}";
             await RefreshLibraryAsync();
         }
         finally
         {
-            SyncSteamButton.IsEnabled = true;
+            SyncLibraryButton.IsEnabled = true;
         }
     }
 
@@ -121,6 +126,9 @@ public partial class MainWindow : Window
         GameGrid.ItemsSource = _cards;
 
         var totalSeconds = items.Sum(x => x.TotalPlaytimeSeconds);
-        LibrarySummaryText.Text = $"{items.Count} game(s)  •  {GameCardViewModel.FormatPlaytime(totalSeconds)} tracked";
+        var installs = items.Sum(x => x.Installations.Count);
+        LibrarySummaryText.Text =
+            $"{items.Count} game(s)  •  {installs} installation(s)  •  " +
+            $"{GameCardViewModel.FormatPlaytime(totalSeconds)} tracked";
     }
 }
