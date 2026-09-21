@@ -4,4 +4,5 @@ public sealed record Game(
     Guid Id,
     string Title,
     DateTimeOffset CreatedUtc,
-    DateTimeOffset UpdatedUtc);
+    DateTimeOffset UpdatedUtc,
+    string? CoverImagePath = null);
