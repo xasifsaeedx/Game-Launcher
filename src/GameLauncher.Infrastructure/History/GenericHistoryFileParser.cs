@@ -12,6 +12,9 @@ public sealed class GenericHistoryFileParser : IHistoryFileParser
     private static readonly string[] TitleAliases =
         ["title", "gametitle", "game", "gamename", "productname", "name"];
 
+    private static readonly string[] StrongTitleAliases =
+        ["title", "gametitle", "game", "gamename", "productname"];
+
     private static readonly string[] IdAliases =
         ["externalid", "gameid", "appid", "applicationid", "productid", "titleid", "id"];
 
@@ -157,22 +160,33 @@ public sealed class GenericHistoryFileParser : IHistoryFileParser
         return games;
     }
 
-    private static IReadOnlyList<JsonElement> FindObjectArray(JsonElement root)
+    private static IReadOnlyList<JsonElement> FindObjectArray(
+        JsonElement root,
+        string? contextName = null)
     {
         if (root.ValueKind == JsonValueKind.Array)
         {
             var values = root.EnumerateArray().ToArray();
+            var context = NormalizeHeader(contextName);
+            var allowsGenericName =
+                context.Contains("game", StringComparison.Ordinal) ||
+                context.Contains("library", StringComparison.Ordinal) ||
+                context.Contains("product", StringComparison.Ordinal) ||
+                context.Contains("title", StringComparison.Ordinal);
+
+            var aliases = allowsGenericName ? TitleAliases : StrongTitleAliases;
+
             if (values.Any(x =>
                 x.ValueKind == JsonValueKind.Object &&
                 x.EnumerateObject().Any(p =>
-                    TitleAliases.Contains(NormalizeHeader(p.Name), StringComparer.Ordinal))))
+                    aliases.Contains(NormalizeHeader(p.Name), StringComparer.Ordinal))))
             {
                 return values;
             }
 
             foreach (var value in values)
             {
-                var nested = FindObjectArray(value);
+                var nested = FindObjectArray(value, contextName);
                 if (nested.Count > 0) return nested;
             }
 
@@ -186,7 +200,7 @@ public sealed class GenericHistoryFileParser : IHistoryFileParser
 
         foreach (var property in root.EnumerateObject())
         {
-            var nested = FindObjectArray(property.Value);
+            var nested = FindObjectArray(property.Value, property.Name);
             if (nested.Count > 0) return nested;
         }
 
