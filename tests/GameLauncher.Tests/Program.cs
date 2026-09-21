@@ -27,6 +27,9 @@ var tests = new (string Name, Func<Task> Run)[]
     ("Source rescan retires removed installations", SourceRescanRetiresRemovedInstallations),
     ("Unified library merges exact normalized titles", UnifiedLibraryMergesExactTitles),
     ("Steam artwork enricher caches cover art", SteamArtworkEnricherCachesCover),
+    ("Launch profile repository persists profile and actions", LaunchProfileRepositoryPersistsProfileAndActions),
+    ("Launch profile service keeps one default across merged installs", LaunchProfileServiceKeepsOneDefault),
+    ("Smart launch orders actions and cleans companions", SmartLaunchOrdersActionsAndCleansCompanions),
     ("Session service persists runtime playtime", SessionServicePersistsPlaytime)
 };
 
@@ -52,7 +55,7 @@ if (failures.Count > 0)
 }
 else
 {
-    Console.WriteLine($"All {tests.Length} Phase 2 tests passed.");
+    Console.WriteLine($"All {tests.Length} Phase 3 tests passed.");
 }
 
 static Task AppPathsCreatesExpectedFolders()
@@ -324,6 +327,179 @@ static async Task SteamArtworkEnricherCachesCover()
     Assert.True(File.Exists(enriched.CoverImagePath!));
 }
 
+static async Task LaunchProfileRepositoryPersistsProfileAndActions()
+{
+    using var temp = new TempDirectory();
+    var dbPath = Path.Combine(temp.Path, "launcher.db");
+    var games = new SqliteGameRepository(dbPath);
+    var profiles = new SqliteLaunchProfileRepository(dbPath);
+
+    var now = DateTimeOffset.UtcNow;
+    var game = new Game(Guid.NewGuid(), "Profile Test", now, now);
+    await games.UpsertGameAsync(game);
+
+    var profile = new LaunchProfile(
+        Guid.NewGuid(),
+        game.Id,
+        "Streaming",
+        null,
+        "-dx12",
+        true,
+        now,
+        now);
+
+    var action = new LaunchAction(
+        Guid.NewGuid(),
+        profile.Id,
+        LaunchActionStage.Companion,
+        "OBS",
+        @"C:\Tools\obs64.exe",
+        "--startreplaybuffer",
+        @"C:\Tools",
+        0,
+        false,
+        true,
+        true);
+
+    await profiles.UpsertLaunchProfileAsync(profile);
+    await profiles.ReplaceLaunchActionsAsync(profile.Id, new[] { action });
+
+    var storedProfile = await profiles.GetLaunchProfileAsync(profile.Id);
+    var storedActions = await profiles.GetLaunchActionsAsync(profile.Id);
+
+    Assert.NotNull(storedProfile);
+    Assert.Equal("Streaming", storedProfile!.Name);
+    Assert.Equal("-dx12", storedProfile.GameArgumentsOverride);
+    Assert.Equal(1, storedActions.Count);
+    Assert.Equal("OBS", storedActions[0].Name);
+    Assert.True(storedActions[0].CloseWithGame);
+}
+
+static async Task LaunchProfileServiceKeepsOneDefault()
+{
+    using var temp = new TempDirectory();
+    var dbPath = Path.Combine(temp.Path, "launcher.db");
+    var games = new SqliteGameRepository(dbPath);
+    var profileRepository = new SqliteLaunchProfileRepository(dbPath);
+    var service = new LaunchProfileService(profileRepository);
+
+    var now = DateTimeOffset.UtcNow;
+    var firstGame = new Game(Guid.NewGuid(), "Control", now, now);
+    var secondGame = new Game(Guid.NewGuid(), "CONTROL [PC]", now, now);
+    await games.UpsertGameAsync(firstGame);
+    await games.UpsertGameAsync(secondGame);
+
+    var firstInstall = new GameInstallation(
+        Guid.NewGuid(), firstGame.Id, GameSource.Steam, "870780",
+        @"C:\Games\ControlSteam", @"C:\Games\ControlSteam\Control.exe", null, true);
+    var secondInstall = new GameInstallation(
+        Guid.NewGuid(), secondGame.Id, GameSource.Epic, "control-epic",
+        @"C:\Games\ControlEpic", @"C:\Games\ControlEpic\Control.exe", null, true);
+
+    await games.UpsertInstallationAsync(firstInstall);
+    await games.UpsertInstallationAsync(secondInstall);
+
+    var item = new GameLibraryItem(
+        firstGame,
+        new[] { firstInstall, secondInstall },
+        0,
+        null);
+
+    var firstProfile = new LaunchProfile(
+        Guid.NewGuid(), firstGame.Id, "Steam Setup", firstInstall.Id,
+        null, true, now, now);
+    await service.SaveAsync(item, firstProfile, Array.Empty<LaunchAction>());
+
+    var secondProfile = new LaunchProfile(
+        Guid.NewGuid(), secondGame.Id, "Epic Setup", secondInstall.Id,
+        null, true, now, now);
+    await service.SaveAsync(item, secondProfile, Array.Empty<LaunchAction>());
+
+    var stored = await service.GetProfilesAsync(item);
+    Assert.Equal(2, stored.Count);
+    Assert.Equal(1, stored.Count(x => x.Profile.IsDefault));
+    Assert.Equal(secondProfile.Id, stored.Single(x => x.Profile.IsDefault).Profile.Id);
+}
+
+static async Task SmartLaunchOrdersActionsAndCleansCompanions()
+{
+    using var temp = new TempDirectory();
+    var dbPath = Path.Combine(temp.Path, "launcher.db");
+    var games = new SqliteGameRepository(dbPath);
+    var profileRepository = new SqliteLaunchProfileRepository(dbPath);
+    var profileService = new LaunchProfileService(profileRepository);
+
+    var events = new List<string>();
+    var now = DateTimeOffset.UtcNow;
+    var game = new Game(Guid.NewGuid(), "Smart Launch Test", now, now);
+    var installation = new GameInstallation(
+        Guid.NewGuid(),
+        game.Id,
+        GameSource.Steam,
+        "12345",
+        @"C:\Games\Smart",
+        @"C:\Games\Smart\Smart.exe",
+        "steam://rungameid/12345",
+        true);
+
+    await games.UpsertGameAsync(game);
+    await games.UpsertInstallationAsync(installation);
+
+    var item = new GameLibraryItem(game, new[] { installation }, 0, null);
+    var profile = new LaunchProfile(
+        Guid.NewGuid(),
+        game.Id,
+        "Full Setup",
+        installation.Id,
+        "-dx12",
+        true,
+        now,
+        now);
+
+    var actions = new[]
+    {
+        new LaunchAction(
+            Guid.NewGuid(), profile.Id, LaunchActionStage.PreLaunch,
+            "Prepare", @"C:\Tools\prepare.exe", null, null,
+            0, true, false, true),
+        new LaunchAction(
+            Guid.NewGuid(), profile.Id, LaunchActionStage.Companion,
+            "Monitor", @"C:\Tools\monitor.exe", null, null,
+            1, false, true, true),
+        new LaunchAction(
+            Guid.NewGuid(), profile.Id, LaunchActionStage.PostGame,
+            "Cleanup", @"C:\Tools\cleanup.exe", null, null,
+            2, true, false, true)
+    };
+
+    await profileService.SaveAsync(item, profile, actions);
+
+    var gameRuntime = new RecordingGameRuntime(events, now, now.AddSeconds(30));
+    var sessions = new GameSessionService(games, gameRuntime);
+    var external = new RecordingExternalRuntime(events);
+    var smart = new SmartLaunchService(profileService, sessions, external);
+
+    await smart.LaunchAsync(item);
+
+    Assert.SequenceEqual(
+        new[]
+        {
+            "start:Prepare",
+            "wait:Prepare",
+            "start:Monitor",
+            "game:start",
+            "game:wait",
+            "stop:Monitor",
+            "start:Cleanup",
+            "wait:Cleanup"
+        },
+        events);
+
+    Assert.NotNull(gameRuntime.LastInstallation);
+    Assert.Equal("-dx12", gameRuntime.LastInstallation!.LaunchArguments);
+    Assert.Equal<string?>(null, gameRuntime.LastInstallation.LaunchUri);
+}
+
 static async Task SessionServicePersistsPlaytime()
 {
     using var temp = new TempDirectory();
@@ -452,6 +628,114 @@ file sealed class StaticHttpHandler : HttpMessageHandler
     }
 }
 
+file sealed class RecordingGameRuntime : IGameRuntime
+{
+    private readonly List<string> _events;
+    private readonly DateTimeOffset _start;
+    private readonly DateTimeOffset _end;
+
+    public RecordingGameRuntime(
+        List<string> events,
+        DateTimeOffset start,
+        DateTimeOffset end)
+    {
+        _events = events;
+        _start = start;
+        _end = end;
+    }
+
+    public GameInstallation? LastInstallation { get; private set; }
+
+    public Task<IGameRunHandle> LaunchAsync(
+        GameInstallation installation,
+        CancellationToken cancellationToken = default)
+    {
+        LastInstallation = installation;
+        _events.Add("game:start");
+        return Task.FromResult<IGameRunHandle>(
+            new RecordingGameRunHandle(_events, _start, _end, installation.ExecutablePath));
+    }
+}
+
+file sealed class RecordingGameRunHandle : IGameRunHandle
+{
+    private readonly List<string> _events;
+    private readonly DateTimeOffset _end;
+
+    public RecordingGameRunHandle(
+        List<string> events,
+        DateTimeOffset start,
+        DateTimeOffset end,
+        string? executablePath)
+    {
+        _events = events;
+        StartedUtc = start;
+        _end = end;
+        DetectedExecutablePath = executablePath;
+    }
+
+    public DateTimeOffset StartedUtc { get; }
+    public string? DetectedExecutablePath { get; }
+
+    public Task<DateTimeOffset> WaitForExitAsync(
+        CancellationToken cancellationToken = default)
+    {
+        _events.Add("game:wait");
+        return Task.FromResult(_end);
+    }
+
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+}
+
+file sealed class RecordingExternalRuntime : IExternalProgramRuntime
+{
+    private readonly List<string> _events;
+
+    public RecordingExternalRuntime(List<string> events)
+    {
+        _events = events;
+    }
+
+    public Task<IExternalProgramHandle> StartAsync(
+        LaunchAction action,
+        CancellationToken cancellationToken = default)
+    {
+        _events.Add($"start:{action.Name}");
+        return Task.FromResult<IExternalProgramHandle>(
+            new RecordingExternalHandle(_events, action.Name));
+    }
+}
+
+file sealed class RecordingExternalHandle : IExternalProgramHandle
+{
+    private readonly List<string> _events;
+    private readonly string _name;
+
+    public RecordingExternalHandle(List<string> events, string name)
+    {
+        _events = events;
+        _name = name;
+    }
+
+    public bool IsRunning { get; private set; } = true;
+
+    public Task WaitForExitAsync(CancellationToken cancellationToken = default)
+    {
+        _events.Add($"wait:{_name}");
+        IsRunning = false;
+        return Task.CompletedTask;
+    }
+
+    public Task StopAsync(CancellationToken cancellationToken = default)
+    {
+        _events.Add($"stop:{_name}");
+        IsRunning = false;
+        return Task.CompletedTask;
+    }
+
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+}
+
 file sealed class FakeRuntime : IGameRuntime
 {
     private readonly DateTimeOffset _start;
@@ -511,6 +795,17 @@ file static class Assert
         if (EqualityComparer<T>.Default.Equals(notExpected, actual))
         {
             throw new InvalidOperationException($"Did not expect '{actual}'.");
+        }
+    }
+
+    public static void SequenceEqual<T>(
+        IReadOnlyList<T> expected,
+        IReadOnlyList<T> actual)
+    {
+        if (!expected.SequenceEqual(actual))
+        {
+            throw new InvalidOperationException(
+                $"Expected sequence '{string.Join(", ", expected)}', got '{string.Join(", ", actual)}'.");
         }
     }
 

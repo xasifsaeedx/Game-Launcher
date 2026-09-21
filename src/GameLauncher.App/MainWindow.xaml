@@ -45,7 +45,7 @@
                 </ItemsControl.ItemsPanel>
                 <ItemsControl.ItemTemplate>
                     <DataTemplate>
-                        <Border Width="190" Height="310" Margin="0,0,16,16" Padding="10"
+                        <Border Width="190" Height="318" Margin="0,0,16,16" Padding="10"
                                 Background="#181B21" CornerRadius="10">
                             <Grid>
                                 <Grid.RowDefinitions>
@@ -74,8 +74,23 @@
                                     <TextBlock Text="{Binding Playtime}" FontSize="11" Foreground="#8E96A3"/>
                                 </StackPanel>
 
-                                <Button Grid.Row="5" Content="Play" Tag="{Binding GameId}" FontWeight="SemiBold"
-                                        HorizontalAlignment="Stretch" Click="PlayButton_Click"/>
+                                <Grid Grid.Row="5">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="7"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Button Content="Play"
+                                            Tag="{Binding GameId}"
+                                            FontWeight="SemiBold"
+                                            HorizontalAlignment="Stretch"
+                                            Click="PlayButton_Click"/>
+                                    <Button Grid.Column="2"
+                                            Content="Profiles"
+                                            Tag="{Binding GameId}"
+                                            Padding="10,8"
+                                            Click="ProfilesButton_Click"/>
+                                </Grid>
                             </Grid>
                         </Border>
                     </DataTemplate>
@@ -89,7 +104,7 @@
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
             <TextBlock x:Name="StatusText" VerticalAlignment="Center" Foreground="#9EA6B2" Text="Ready."/>
-            <TextBlock Grid.Column="1" VerticalAlignment="Center" Foreground="#59616D" Text="Phase 2"/>
+            <TextBlock Grid.Column="1" VerticalAlignment="Center" Foreground="#59616D" Text="Phase 3"/>
         </Grid>
     </Grid>
 </Window>

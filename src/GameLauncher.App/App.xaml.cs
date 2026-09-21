@@ -19,6 +19,8 @@ public partial class App : Application
         paths.EnsureCreated();
 
         var repository = new SqliteGameRepository(paths.DatabasePath);
+        var launchProfilesRepository = new SqliteLaunchProfileRepository(paths.DatabasePath);
+
         IGameSourceAdapter[] adapters =
         [
             new SteamGameSourceAdapter(),
@@ -33,8 +35,13 @@ public partial class App : Application
         var metadata = new SteamArtworkMetadataEnricher(paths.CoversDirectory);
         var library = new GameLibraryService(repository, adapters, metadata);
         var sessions = new GameSessionService(repository, new WindowsGameRuntime());
+        var profiles = new LaunchProfileService(launchProfilesRepository);
+        var smartLaunch = new SmartLaunchService(
+            profiles,
+            sessions,
+            new WindowsExternalProgramRuntime());
 
-        var window = new MainWindow(library, sessions);
+        var window = new MainWindow(library, smartLaunch, profiles);
         window.Show();
     }
 }
