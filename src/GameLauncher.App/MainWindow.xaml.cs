@@ -13,6 +13,7 @@ public partial class MainWindow : Window
     private readonly GameplayOverlayService _overlay;
     private readonly HatchableSyncService _hatchable;
     private readonly GraphicsOptimizerService _graphics;
+    private readonly GameHistoryService _history;
     private readonly CancellationTokenSource _lifetime = new();
     private IReadOnlyList<GameCardViewModel> _cards = Array.Empty<GameCardViewModel>();
 
@@ -22,7 +23,8 @@ public partial class MainWindow : Window
         LaunchProfileService profiles,
         GameplayOverlayService overlay,
         HatchableSyncService hatchable,
-        GraphicsOptimizerService graphics)
+        GraphicsOptimizerService graphics,
+        GameHistoryService history)
     {
         InitializeComponent();
         _library = library ?? throw new ArgumentNullException(nameof(library));
@@ -31,6 +33,7 @@ public partial class MainWindow : Window
         _overlay = overlay ?? throw new ArgumentNullException(nameof(overlay));
         _hatchable = hatchable ?? throw new ArgumentNullException(nameof(hatchable));
         _graphics = graphics ?? throw new ArgumentNullException(nameof(graphics));
+        _history = history ?? throw new ArgumentNullException(nameof(history));
         Loaded += MainWindow_Loaded;
         Closed += (_, _) => _lifetime.Cancel();
     }
@@ -39,6 +42,11 @@ public partial class MainWindow : Window
     {
         Loaded -= MainWindow_Loaded;
         await SyncAndRefreshAsync();
+    }
+
+    private void HistoryButton_Click(object sender, RoutedEventArgs e)
+    {
+        new GamingHistoryWindow(_history) { Owner = this }.ShowDialog();
     }
 
     private void GraphicsButton_Click(object sender, RoutedEventArgs e)
@@ -186,6 +194,7 @@ public partial class MainWindow : Window
             StatusText.Text = "Scanning installed game libraries...";
             var result = await _library.SyncSourcesAsync(_lifetime.Token);
             var hatchableWarning = await TryAutoHatchableSyncAsync();
+            var historyWarning = await TryAutoSteamHistorySyncAsync();
             await RefreshLibraryAsync();
 
             var warningSuffix = result.Warnings.Count == 0
@@ -195,7 +204,8 @@ public partial class MainWindow : Window
             StatusText.Text =
                 $"Library sync complete: {result.DiscoveredCount} installation(s) discovered, " +
                 $"{result.MetadataUpdatedCount} cover(s) added.{warningSuffix}" +
-                (hatchableWarning is null ? string.Empty : $" Hatchable: {hatchableWarning}");
+                (hatchableWarning is null ? string.Empty : $" Hatchable: {hatchableWarning}") +
+                (historyWarning is null ? string.Empty : $" Steam history: {historyWarning}");
         }
         catch (OperationCanceledException)
         {
@@ -209,6 +219,28 @@ public partial class MainWindow : Window
         finally
         {
             SyncLibraryButton.IsEnabled = true;
+        }
+    }
+
+    private async Task<string?> TryAutoSteamHistorySyncAsync()
+    {
+        try
+        {
+            if (!await _history.IsSteamAutoSyncEnabledAsync(_lifetime.Token))
+            {
+                return null;
+            }
+
+            await _history.SyncSteamAsync(_lifetime.Token);
+            return null;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            return ex.Message;
         }
     }
 

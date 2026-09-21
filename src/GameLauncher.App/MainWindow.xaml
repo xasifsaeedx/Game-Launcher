@@ -2,9 +2,9 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="My Game Launcher"
-        Width="1220"
+        Width="1300"
         Height="740"
-        MinWidth="940"
+        MinWidth="1020"
         MinHeight="580"
         WindowStartupLocation="CenterScreen"
         Background="#0E1014"
@@ -31,6 +31,7 @@
             </StackPanel>
 
             <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Bottom">
+                <Button Content="History" Margin="0,0,8,0" Click="HistoryButton_Click"/>
                 <Button Content="Graphics" Margin="0,0,8,0" Click="GraphicsButton_Click"/>
                 <Button Content="Next Play" Margin="0,0,8,0" Click="NextPlayButton_Click"/>
                 <Button Content="Hatchable" Margin="0,0,8,0" Click="HatchableButton_Click"/>
@@ -117,7 +118,7 @@
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
             <TextBlock x:Name="StatusText" VerticalAlignment="Center" Foreground="#9EA6B2" Text="Ready."/>
-            <TextBlock Grid.Column="1" VerticalAlignment="Center" Foreground="#59616D" Text="Phase 6"/>
+            <TextBlock Grid.Column="1" VerticalAlignment="Center" Foreground="#59616D" Text="Phase 7"/>
         </Grid>
     </Grid>
 </Window>
