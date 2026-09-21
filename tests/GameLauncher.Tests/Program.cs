@@ -72,6 +72,7 @@ var tests = new (string Name, Func<Task> Run)[]
     ("Launcher backup creates usable ZIP", LauncherBackupCreatesUsableZip),
     ("History CSV export escapes values", HistoryCsvExportEscapesValues),
     ("GitHub updater parses latest release", GitHubUpdaterParsesLatestRelease),
+    ("GitHub updater rejects non-HTTPS installer assets", GitHubUpdaterRejectsHttpInstaller),
     ("GitHub updater downloads installer asset", GitHubUpdaterDownloadsInstaller),
     ("Session service persists runtime playtime", SessionServicePersistsPlaytime)
 };
@@ -1478,6 +1479,35 @@ static async Task GitHubUpdaterParsesLatestRelease()
     Assert.Equal(new Version(1, 1, 0), update.LatestVersion);
     Assert.NotNull(update.InstallerDownload);
     Assert.Equal("GameLauncher-Setup.exe", Path.GetFileName(update.InstallerDownload!.AbsolutePath));
+}
+
+static async Task GitHubUpdaterRejectsHttpInstaller()
+{
+    const string json =
+        """
+        {
+          "tag_name": "v1.1.0",
+          "name": "My Game Launcher v1.1.0",
+          "html_url": "http://example.test/release",
+          "assets": [
+            {
+              "name": "GameLauncher-Setup.exe",
+              "browser_download_url": "http://example.test/GameLauncher-Setup.exe"
+            }
+          ]
+        }
+        """;
+
+    using var http = new HttpClient(
+        new RoutingHttpHandler(Encoding.UTF8.GetBytes(json), [1, 2, 3]));
+    var service = new GitHubReleaseUpdateService(http);
+    var update = await service.CheckAsync(new Version(1, 0, 0));
+
+    Assert.True(update.IsUpdateAvailable);
+    Assert.True(update.InstallerDownload is null);
+    Assert.Equal(
+        "https://github.com/xasifsaeedx/Game-Launcher/releases",
+        update.ReleasePage.ToString().TrimEnd('/'));
 }
 
 static async Task GitHubUpdaterDownloadsInstaller()
