@@ -96,5 +96,5 @@ public sealed class LauncherBackupService
     }
 
     private static string Csv(string value) =>
-        """ + (value ?? string.Empty).Replace(""", """", StringComparison.Ordinal) + """;
+        "\"" + (value ?? string.Empty).Replace("\"", "\"\"", StringComparison.Ordinal) + "\"";
 }
