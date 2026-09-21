@@ -24,7 +24,14 @@ public sealed class RtssGameplayOverlayRuntime : IGameplayOverlayRuntime
         {
             if (settings.ShowGpuUsage || settings.ShowGpuTemperature)
             {
-                gpu = new GpuMetricsReader();
+                try
+                {
+                    gpu = new GpuMetricsReader();
+                }
+                catch
+                {
+                    gpu = null;
+                }
             }
 
             return new RtssOverlaySession(
