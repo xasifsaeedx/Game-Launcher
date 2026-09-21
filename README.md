@@ -1,6 +1,6 @@
 # Game Launcher
 
-A lightweight, open-source Windows game launcher built around a local unified library. Current implementation: **Phase 5 - Hatchable Sync**.
+A lightweight, open-source Windows game launcher built around a local unified library. Current implementation: **Phase 6 - Graphics Optimizer**.
 
 ## Current features
 
@@ -11,17 +11,43 @@ A lightweight, open-source Windows game launcher built around a local unified li
 - Game launching with process detection and persisted playtime.
 - Per-game smart launch profiles with pre-launch, companion, and post-game programs.
 - Gameplay-only RTSS overlay with FPS, GPU usage, and GPU temperature.
-- **Hatchable synchronization** with the companion My Game Library site:
-  - pulls the ranked Next 100 list
-  - matches installed games by Steam App ID first, exact normalized title second
-  - shows Next 100 rank/status on installed game cards
-  - provides a full Next Play window for ranked games that are installed or not installed
-  - uploads cumulative tracked playtime and last-played time
-  - syncs Playing / Completed / Paused / Dropped progress
-  - syncs optional 1-10 ratings
-  - automatically syncs at startup and after gameplay when enabled
-  - keeps a local cached ranking for offline viewing
-  - stores the launcher token encrypted with Windows DPAPI
+- Hatchable synchronization for Next 100 ranking, status, progress, rating, playtime, and last-played data.
+- **Graphics Optimizer**:
+  - detects CPU, GPU, RAM, primary resolution, and refresh rate
+  - classifies the GPU into a conservative performance tier
+  - defaults to a 1920x1080 / 60 FPS / quality-oriented target
+  - supports Performance / Balanced / Quality preferences
+  - allows manual tier override for unknown or future GPUs
+  - provides per-game recommendations
+  - previews every field that can be changed automatically
+  - backs up original config before the first automatic change
+  - can restore the original config
+  - never creates missing settings or rewrites unsupported games
+  - can optionally apply verified safe fields immediately before launch
+
+## Graphics Optimizer safety
+
+Automatic config editing is intentionally narrow.
+
+Current verified safe-apply profiles:
+
+- The Witcher 3: Wild Hunt
+- Grand Theft Auto V
+- Red Dead Redemption 2
+
+Current recommendation-only profiles include:
+
+- Control: Ultimate Edition
+- God of War
+- Ghost of Tsushima DIRECTOR'S CUT
+- Assassin's Creed Shadows
+- Black Myth: Wukong
+
+Games without a built-in profile still receive generic recommendations from the selected hardware tier and target, but the launcher will not edit their configuration files.
+
+Automatic writers only modify known fields that already exist in a recognized config file. The first modification creates a `.game-launcher.bak` copy beside the original file. Later applies never overwrite that original backup.
+
+If automatic apply is enabled and an optimization step fails, the game launch still continues with the existing configuration.
 
 ## Hatchable Sync setup
 
@@ -39,16 +65,6 @@ https://my-game-library.hatchable.site
 6. Click **Save & test**.
 
 The site stores only a SHA-256 hash of the device token. The Windows launcher stores the token encrypted for the current Windows user through DPAPI.
-
-### Sync ownership rules
-
-- The Hatchable site remains authoritative for **Next 100 ranking** and the existing **Played / Play next / Didn't like** preference.
-- The launcher contributes cumulative **playtime** and **last played**.
-- Progress state and 1-10 rating may be edited from either the website or the launcher.
-- Local tracked playtime never decreases the remote total.
-- Starting a locally matched game with tracked playtime can set progress to **Playing** when no progress has been chosen yet.
-- Marking progress **Completed** updates the website preference to **Played**, except an explicit **Didn't like** preference is preserved.
-- Network/sync failures never block launching or local playtime tracking.
 
 ## Gameplay overlay
 
@@ -102,12 +118,12 @@ Local launcher data:
 - Phase 2: Unified Library - complete
 - Phase 3: Smart Launching - complete
 - Phase 4: Gameplay Overlay - complete
-- **Phase 5: Hatchable Sync - current**
-- Phase 6: Graphics Optimizer
+- Phase 5: Hatchable Sync - complete
+- **Phase 6: Graphics Optimizer - current**
 - Phase 7: History + Console Accounts
 - Phase 8: Final Product
 
-See `PHASE5_NOTES.md` for implementation boundaries.
+See `PHASE6_NOTES.md` for implementation boundaries.
 
 ## License
 

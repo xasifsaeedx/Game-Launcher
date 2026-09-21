@@ -2,6 +2,8 @@ using System.Windows;
 using GameLauncher.Core.Adapters;
 using GameLauncher.Core.Services;
 using GameLauncher.Infrastructure.Adapters;
+using GameLauncher.Infrastructure.Graphics;
+using GameLauncher.Infrastructure.Hardware;
 using GameLauncher.Infrastructure.Metadata;
 using GameLauncher.Infrastructure.Overlay;
 using GameLauncher.Infrastructure.Repositories;
@@ -24,6 +26,7 @@ public partial class App : Application
         var repository = new SqliteGameRepository(paths.DatabasePath);
         var launchProfilesRepository = new SqliteLaunchProfileRepository(paths.DatabasePath);
         var overlaySettingsRepository = new SqliteOverlaySettingsRepository(paths.DatabasePath);
+        var graphicsRepository = new SqliteGraphicsOptimizerRepository(paths.DatabasePath);
         var hatchableRepository = new SqliteHatchableSyncRepository(
             paths.DatabasePath,
             new DpapiSecretProtector());
@@ -41,6 +44,13 @@ public partial class App : Application
 
         var metadata = new SteamArtworkMetadataEnricher(paths.CoversDirectory);
         var library = new GameLibraryService(repository, adapters, metadata);
+
+        var graphics = new GraphicsOptimizerService(
+            graphicsRepository,
+            new WindowsHardwareProfileDetector(),
+            new GraphicsProfileCatalog(BuiltInGraphicsProfiles.Create()),
+            new SafeGraphicsConfigRuntime());
+
         var overlay = new GameplayOverlayService(
             overlaySettingsRepository,
             new RtssGameplayOverlayRuntime());
@@ -64,7 +74,8 @@ public partial class App : Application
             smartLaunch,
             profiles,
             overlay,
-            hatchable);
+            hatchable,
+            graphics);
         window.Show();
     }
 }
