@@ -161,18 +161,7 @@ public sealed class GenericHistoryFileParser : IHistoryFileParser
     {
         if (root.ValueKind == JsonValueKind.Array)
         {
-            return root.EnumerateArray().ToArray();
-        }
-
-        if (root.ValueKind != JsonValueKind.Object)
-        {
-            return Array.Empty<JsonElement>();
-        }
-
-        foreach (var property in root.EnumerateObject())
-        {
-            if (property.Value.ValueKind != JsonValueKind.Array) continue;
-            var values = property.Value.EnumerateArray().ToArray();
+            var values = root.EnumerateArray().ToArray();
             if (values.Any(x =>
                 x.ValueKind == JsonValueKind.Object &&
                 x.EnumerateObject().Any(p =>
@@ -180,6 +169,19 @@ public sealed class GenericHistoryFileParser : IHistoryFileParser
             {
                 return values;
             }
+
+            foreach (var value in values)
+            {
+                var nested = FindObjectArray(value);
+                if (nested.Count > 0) return nested;
+            }
+
+            return Array.Empty<JsonElement>();
+        }
+
+        if (root.ValueKind != JsonValueKind.Object)
+        {
+            return Array.Empty<JsonElement>();
         }
 
         foreach (var property in root.EnumerateObject())
