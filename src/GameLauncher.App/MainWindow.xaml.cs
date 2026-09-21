@@ -10,6 +10,7 @@ public partial class MainWindow : Window
     private readonly SmartLaunchService _smartLaunch;
     private readonly LaunchProfileService _profiles;
     private readonly GameplayOverlayService _overlay;
+    private readonly HatchableSyncService _hatchable;
     private readonly CancellationTokenSource _lifetime = new();
     private IReadOnlyList<GameCardViewModel> _cards = Array.Empty<GameCardViewModel>();
 
@@ -17,13 +18,15 @@ public partial class MainWindow : Window
         GameLibraryService library,
         SmartLaunchService smartLaunch,
         LaunchProfileService profiles,
-        GameplayOverlayService overlay)
+        GameplayOverlayService overlay,
+        HatchableSyncService hatchable)
     {
         InitializeComponent();
         _library = library ?? throw new ArgumentNullException(nameof(library));
         _smartLaunch = smartLaunch ?? throw new ArgumentNullException(nameof(smartLaunch));
         _profiles = profiles ?? throw new ArgumentNullException(nameof(profiles));
         _overlay = overlay ?? throw new ArgumentNullException(nameof(overlay));
+        _hatchable = hatchable ?? throw new ArgumentNullException(nameof(hatchable));
         Loaded += MainWindow_Loaded;
         Closed += (_, _) => _lifetime.Cancel();
     }
@@ -36,11 +39,23 @@ public partial class MainWindow : Window
 
     private void OverlayButton_Click(object sender, RoutedEventArgs e)
     {
-        var window = new OverlaySettingsWindow(_overlay)
-        {
-            Owner = this
-        };
+        new OverlaySettingsWindow(_overlay) { Owner = this }.ShowDialog();
+    }
+
+    private async void HatchableButton_Click(object sender, RoutedEventArgs e)
+    {
+        var window = new HatchableSyncWindow(_hatchable) { Owner = this };
         window.ShowDialog();
+        if (window.Changed)
+        {
+            await RefreshLibraryAsync();
+        }
+    }
+
+    private async void NextPlayButton_Click(object sender, RoutedEventArgs e)
+    {
+        new NextPlayWindow(_hatchable, _library) { Owner = this }.ShowDialog();
+        await RefreshLibraryAsync();
     }
 
     private async void SyncLibraryButton_Click(object sender, RoutedEventArgs e)
@@ -63,6 +78,7 @@ public partial class MainWindow : Window
                 dialog.LaunchArguments,
                 _lifetime.Token);
 
+            await TryAutoHatchableSyncAsync();
             await RefreshLibraryAsync();
             StatusText.Text = $"Added {dialog.GameTitle}.";
         }
@@ -90,9 +106,12 @@ public partial class MainWindow : Window
                 card.Item,
                 cancellationToken: _lifetime.Token);
 
+            var syncWarning = await TryAutoHatchableSyncAsync();
             await RefreshLibraryAsync();
+
             StatusText.Text =
-                $"{card.Title} session saved ({GameCardViewModel.FormatPlaytime(completed.DurationSeconds ?? 0)}).";
+                $"{card.Title} session saved ({GameCardViewModel.FormatPlaytime(completed.DurationSeconds ?? 0)})." +
+                (syncWarning is null ? string.Empty : $" Hatchable: {syncWarning}");
         }
         catch (OperationCanceledException)
         {
@@ -114,11 +133,7 @@ public partial class MainWindow : Window
         var card = _cards.FirstOrDefault(x => x.GameId == gameId);
         if (card is null) return;
 
-        var window = new LaunchProfileWindow(card.Item, _profiles)
-        {
-            Owner = this
-        };
-        window.ShowDialog();
+        new LaunchProfileWindow(card.Item, _profiles) { Owner = this }.ShowDialog();
     }
 
     private async Task SyncAndRefreshAsync()
@@ -128,6 +143,7 @@ public partial class MainWindow : Window
         {
             StatusText.Text = "Scanning installed game libraries...";
             var result = await _library.SyncSourcesAsync(_lifetime.Token);
+            var hatchableWarning = await TryAutoHatchableSyncAsync();
             await RefreshLibraryAsync();
 
             var warningSuffix = result.Warnings.Count == 0
@@ -136,7 +152,8 @@ public partial class MainWindow : Window
 
             StatusText.Text =
                 $"Library sync complete: {result.DiscoveredCount} installation(s) discovered, " +
-                $"{result.MetadataUpdatedCount} cover(s) added.{warningSuffix}";
+                $"{result.MetadataUpdatedCount} cover(s) added.{warningSuffix}" +
+                (hatchableWarning is null ? string.Empty : $" Hatchable: {hatchableWarning}");
         }
         catch (OperationCanceledException)
         {
@@ -153,16 +170,48 @@ public partial class MainWindow : Window
         }
     }
 
+    private async Task<string?> TryAutoHatchableSyncAsync()
+    {
+        try
+        {
+            if (!await _hatchable.IsAutoSyncEnabledAsync(_lifetime.Token))
+            {
+                return null;
+            }
+
+            await _hatchable.SyncAsync(_lifetime.Token);
+            return null;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            return ex.Message;
+        }
+    }
+
     private async Task RefreshLibraryAsync()
     {
         var items = await _library.GetLibraryAsync(_lifetime.Token);
-        _cards = items.Select(x => new GameCardViewModel(x)).ToArray();
+        var remote = await _hatchable.GetCachedGamesAsync(_lifetime.Token);
+
+        _cards = items
+            .Select(item => new GameCardViewModel(
+                item,
+                HatchableSyncService.FindMatch(item, remote)))
+            .ToArray();
+
         GameGrid.ItemsSource = _cards;
 
         var totalSeconds = items.Sum(x => x.TotalPlaytimeSeconds);
         var installs = items.Sum(x => x.Installations.Count);
+        var ranked = _cards.Count(x => x.Hatchable is not null);
+
         LibrarySummaryText.Text =
             $"{items.Count} game(s)  •  {installs} installation(s)  •  " +
-            $"{GameCardViewModel.FormatPlaytime(totalSeconds)} tracked";
+            $"{GameCardViewModel.FormatPlaytime(totalSeconds)} tracked" +
+            (remote.Count == 0 ? string.Empty : $"  •  {ranked} matched to Next 100");
     }
 }

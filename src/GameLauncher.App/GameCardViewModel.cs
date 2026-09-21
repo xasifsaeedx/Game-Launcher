@@ -4,7 +4,9 @@ namespace GameLauncher.App;
 
 public sealed class GameCardViewModel
 {
-    public GameCardViewModel(GameLibraryItem item)
+    public GameCardViewModel(
+        GameLibraryItem item,
+        HatchableRemoteGame? hatchable = null)
     {
         Item = item;
         GameId = item.Game.Id;
@@ -19,6 +21,11 @@ public sealed class GameCardViewModel
                 .Distinct(StringComparer.OrdinalIgnoreCase));
 
         Playtime = FormatPlaytime(item.TotalPlaytimeSeconds);
+        Hatchable = hatchable;
+        RankBadge = hatchable is null ? string.Empty : $"NEXT #{hatchable.RankScore}";
+        SyncState = hatchable is null
+            ? string.Empty
+            : FormatSyncState(hatchable);
     }
 
     public GameLibraryItem Item { get; }
@@ -28,6 +35,9 @@ public sealed class GameCardViewModel
     public GameInstallation? Installation { get; }
     public string Source { get; }
     public string Playtime { get; }
+    public HatchableRemoteGame? Hatchable { get; }
+    public string RankBadge { get; }
+    public string SyncState { get; }
 
     public static string FormatPlaytime(long seconds)
     {
@@ -35,6 +45,29 @@ public sealed class GameCardViewModel
         var span = TimeSpan.FromSeconds(seconds);
         if (span.TotalHours < 1) return $"{Math.Max(1, (int)span.TotalMinutes)} min";
         return $"{span.TotalHours:0.#} h";
+    }
+
+    private static string FormatSyncState(HatchableRemoteGame game)
+    {
+        if (!string.IsNullOrWhiteSpace(game.ProgressStatus))
+        {
+            return game.ProgressStatus switch
+            {
+                "playing" => "Playing",
+                "completed" => "Completed",
+                "paused" => "Paused",
+                "dropped" => "Dropped",
+                _ => game.ProgressStatus
+            };
+        }
+
+        return game.LibraryStatus switch
+        {
+            "next" => "Play next",
+            "played" => "Played",
+            "dislike" => "Didn't like",
+            _ => string.Empty
+        };
     }
 
     private static string DisplaySource(GameSource source) => source switch
