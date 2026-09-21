@@ -56,9 +56,11 @@ public partial class SteamHistorySettingsWindow : Window
             await _history.SaveSteamSettingsAsync(settings, validate: true);
             var result = await _history.SyncSteamAsync();
 
-            StatusText.Text =
-                $"Connected. Imported {result.StoredCount} Steam game(s). " +
-                "The API key is encrypted for this Windows user.";
+            StatusText.Text = result.DiscoveredCount == 0
+                ? "Connected, but Steam returned 0 games. Check that your Steam game details are visible. " +
+                  "The API key is encrypted for this Windows user."
+                : $"Connected. Imported {result.StoredCount} Steam game(s). " +
+                  "The API key is encrypted for this Windows user.";
             Changed = true;
         }
         catch (Exception ex)
