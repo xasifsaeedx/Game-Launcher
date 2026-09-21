@@ -182,7 +182,7 @@ public sealed class SafeGraphicsConfigRuntime : IGraphicsConfigRuntime
         foreach (var (key, desired) in values)
         {
             var pattern =
-                $"(?is)(<\\s*{Regex.Escape(key)}\\b[^>]*?\\bvalue\\s*=\\s*[\\\"'])(?<value>[^\\\"']*)([\\\"'])";
+                $"(?is)(?<prefix><\\s*{Regex.Escape(key)}\\b[^>]*?\\bvalue\\s*=\\s*[\\\"'])(?<value>[^\\\"']*)(?<suffix>[\\\"'])";
             var regex = new Regex(pattern, RegexOptions.CultureInvariant);
             var matches = regex.Matches(updated);
 
@@ -204,7 +204,7 @@ public sealed class SafeGraphicsConfigRuntime : IGraphicsConfigRuntime
 
             updated = regex.Replace(
                 updated,
-                m => m.Groups[1].Value + desired + m.Groups[3].Value,
+                m => m.Groups["prefix"].Value + desired + m.Groups["suffix"].Value,
                 count: 1);
 
             applied.Add($"{displayNames[key]}: {oldValue} -> {desired}");
