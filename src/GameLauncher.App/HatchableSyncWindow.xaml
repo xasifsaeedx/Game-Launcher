@@ -1,0 +1,61 @@
+<Window x:Class="GameLauncher.App.HatchableSyncWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Hatchable Sync"
+        Width="620"
+        Height="500"
+        ResizeMode="NoResize"
+        WindowStartupLocation="CenterOwner"
+        Background="#0E1014"
+        Foreground="#F5F7FA">
+    <Grid Margin="24">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="18"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="14"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <StackPanel>
+            <TextBlock Text="HATCHABLE SYNC" FontSize="11" FontWeight="SemiBold" Foreground="#8EA8FF"/>
+            <TextBlock Text="Connect My Game Library" Margin="0,3,0,0" FontSize="26" FontWeight="SemiBold"/>
+            <TextBlock Text="Sync Next Play ranking, progress, rating, playtime and last-played data."
+                       Margin="0,5,0,0" Foreground="#9EA6B2"/>
+        </StackPanel>
+
+        <Border Grid.Row="2" Background="#181B21" CornerRadius="10" Padding="16">
+            <StackPanel>
+                <TextBlock Text="Hatchable site" Foreground="#9EA6B2" Margin="0,0,0,5"/>
+                <TextBox x:Name="BaseUrlTextBox" Padding="8" Background="#101319" Foreground="#F5F7FA" BorderBrush="#343A46"/>
+                <TextBlock Text="Launcher token" Foreground="#9EA6B2" Margin="0,12,0,5"/>
+                <PasswordBox x:Name="TokenPasswordBox" Padding="8" Background="#101319" Foreground="#F5F7FA" BorderBrush="#343A46"/>
+                <CheckBox x:Name="AutoSyncCheckBox"
+                          Content="Automatically sync at startup and after gameplay"
+                          Margin="0,14,0,0"/>
+            </StackPanel>
+        </Border>
+
+        <Border Grid.Row="4" Background="#181B21" CornerRadius="10" Padding="16">
+            <StackPanel>
+                <TextBlock x:Name="ConnectionText" Text="Not connected." FontWeight="SemiBold"/>
+                <TextBlock Text="Create/revoke device tokens from the Launcher Sync page on your Hatchable site."
+                           Margin="0,5,0,0" Foreground="#9EA6B2" TextWrapping="Wrap"/>
+                <Button Content="Open Launcher Sync page"
+                        Margin="0,12,0,0"
+                        HorizontalAlignment="Left"
+                        Click="OpenPairingPage_Click"/>
+            </StackPanel>
+        </Border>
+
+        <TextBlock x:Name="StatusText" Grid.Row="5" Margin="0,14,0,0" Foreground="#9EA6B2" TextWrapping="Wrap"/>
+
+        <StackPanel Grid.Row="6" Orientation="Horizontal" HorizontalAlignment="Right">
+            <Button Content="Disconnect" Margin="0,0,8,0" Click="Disconnect_Click"/>
+            <Button Content="Sync now" Margin="0,0,8,0" Click="SyncNow_Click"/>
+            <Button Content="Save & test" FontWeight="SemiBold" Click="Save_Click"/>
+        </StackPanel>
+    </Grid>
+</Window>

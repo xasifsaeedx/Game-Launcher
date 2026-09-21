@@ -4,12 +4,16 @@ using GameLauncher.Core.Adapters;
 using GameLauncher.Core.Models;
 using GameLauncher.Core.Repositories;
 using GameLauncher.Core.Runtime;
+using GameLauncher.Core.Security;
 using GameLauncher.Core.Services;
+using GameLauncher.Core.Sync;
 using GameLauncher.Core.Utilities;
 using GameLauncher.Infrastructure.Adapters;
 using GameLauncher.Infrastructure.Metadata;
 using GameLauncher.Infrastructure.Repositories;
 using GameLauncher.Infrastructure.Storage;
+using GameLauncher.Infrastructure.Sync;
+using Microsoft.Data.Sqlite;
 
 var tests = new (string Name, Func<Task> Run)[]
 {
@@ -35,6 +39,11 @@ var tests = new (string Name, Func<Task> Run)[]
     ("Overlay settings persist and normalize", OverlaySettingsPersistAndNormalize),
     ("Overlay service skips disabled overlay", OverlayServiceSkipsDisabledOverlay),
     ("Session service owns overlay lifecycle", SessionServiceOwnsOverlayLifecycle),
+    ("Hatchable matching prefers Steam app ID", HatchableMatchingPrefersSteamId),
+    ("Hatchable matching falls back to exact normalized title", HatchableMatchingFallsBackToTitle),
+    ("Hatchable settings are protected at rest", HatchableSettingsAreProtectedAtRest),
+    ("Hatchable API client parses and pushes sync data", HatchableApiClientParsesAndPushes),
+    ("Hatchable sync pushes local playtime as playing", HatchableSyncPushesLocalPlaytime),
     ("Session service persists runtime playtime", SessionServicePersistsPlaytime)
 };
 
@@ -60,7 +69,7 @@ if (failures.Count > 0)
 }
 else
 {
-    Console.WriteLine($"All {tests.Length} Phase 4 tests passed.");
+    Console.WriteLine($"All {tests.Length} Phase 5 tests passed.");
 }
 
 static Task AppPathsCreatesExpectedFolders()
@@ -592,6 +601,169 @@ static async Task SessionServiceOwnsOverlayLifecycle()
         events);
 }
 
+static Task HatchableMatchingPrefersSteamId()
+{
+    var now = DateTimeOffset.UtcNow;
+    var game = new Game(Guid.NewGuid(), "Control Ultimate Edition", now, now);
+    var install = new GameInstallation(
+        Guid.NewGuid(), game.Id, GameSource.Steam, "870780",
+        @"C:\Games\Control", @"C:\Games\Control\Control.exe",
+        "steam://rungameid/870780", true);
+    var local = new GameLibraryItem(game, new[] { install }, 0, null);
+
+    HatchableRemoteGame[] remote =
+    [
+        new(4, "Control: Ultimate Edition", "PC, PS5", 870780, null, 4, "next", null, null, 0, null),
+        new(5, "Control Ultimate Edition", "PC", 999999, null, 5, null, null, null, 0, null)
+    ];
+
+    var match = HatchableSyncService.FindMatch(local, remote);
+    Assert.NotNull(match);
+    Assert.Equal(4, match!.RemoteGameId);
+    return Task.CompletedTask;
+}
+
+static Task HatchableMatchingFallsBackToTitle()
+{
+    var now = DateTimeOffset.UtcNow;
+    var game = new Game(Guid.NewGuid(), "CONTROL [PC]", now, now);
+    var install = new GameInstallation(
+        Guid.NewGuid(), game.Id, GameSource.Epic, "control-epic",
+        @"C:\Games\Control", @"C:\Games\Control\Control.exe", null, true);
+    var local = new GameLibraryItem(game, new[] { install }, 0, null);
+
+    HatchableRemoteGame[] remote =
+    [
+        new(4, "Control™", "PC", null, null, 4, "next", null, null, 0, null)
+    ];
+
+    var match = HatchableSyncService.FindMatch(local, remote);
+    Assert.NotNull(match);
+    Assert.Equal(4, match!.RemoteGameId);
+    return Task.CompletedTask;
+}
+
+static async Task HatchableSettingsAreProtectedAtRest()
+{
+    using var temp = new TempDirectory();
+    var path = Path.Combine(temp.Path, "launcher.db");
+    var protector = new PrefixSecretProtector();
+    var repository = new SqliteHatchableSyncRepository(path, protector);
+
+    await repository.SaveSettingsAsync(
+        new HatchableSyncSettings(
+            "https://example.hatchable.site/",
+            "gl_secret_token",
+            true));
+
+    var roundTrip = await repository.GetSettingsAsync();
+    Assert.NotNull(roundTrip);
+    Assert.Equal("https://example.hatchable.site", roundTrip!.BaseUrl);
+    Assert.Equal("gl_secret_token", roundTrip.Token);
+    Assert.True(roundTrip.AutoSync);
+
+    await using var connection = new SqliteConnection($"Data Source={path}");
+    await connection.OpenAsync();
+    await using var command = connection.CreateCommand();
+    command.CommandText = "SELECT protected_token FROM hatchable_sync_settings WHERE id=1;";
+    var stored = Convert.ToString(await command.ExecuteScalarAsync());
+
+    Assert.Equal("protected::gl_secret_token", stored);
+    Assert.NotEqual("gl_secret_token", stored);
+}
+
+static async Task HatchableApiClientParsesAndPushes()
+{
+    var handler = new HatchableHttpHandler();
+    using var http = new HttpClient(handler);
+    var client = new HatchableApiClient(http);
+    var settings = new HatchableSyncSettings(
+        "https://my-game-library.hatchable.site",
+        "gl_test",
+        true);
+
+    var games = await client.GetGamesAsync(settings);
+    Assert.Equal(1, games.Count);
+    Assert.Equal(2, games[0].RemoteGameId);
+    Assert.Equal("Crimson Desert", games[0].Title);
+    Assert.Equal(3321460L, games[0].SteamAppId);
+    Assert.Equal("next", games[0].LibraryStatus);
+    Assert.Equal("playing", games[0].ProgressStatus);
+    Assert.Equal(7200L, games[0].PlaytimeSeconds);
+
+    var updated = await client.PushGamesAsync(
+        settings,
+        new[]
+        {
+            new HatchableGamePush(
+                2,
+                9000,
+                DateTimeOffset.Parse("2026-09-21T10:00:00Z"),
+                "playing",
+                9)
+        });
+
+    Assert.Equal(1, updated);
+    Assert.Equal("Bearer gl_test", handler.LastAuthorization);
+    Assert.True(handler.LastPostBody?.Contains("\"remote_game_id\":2", StringComparison.Ordinal) == true);
+    Assert.True(handler.LastPostBody?.Contains("\"playtime_seconds\":9000", StringComparison.Ordinal) == true);
+    Assert.True(handler.LastPostBody?.Contains("\"rating\":9", StringComparison.Ordinal) == true);
+}
+
+static async Task HatchableSyncPushesLocalPlaytime()
+{
+    using var temp = new TempDirectory();
+    var path = Path.Combine(temp.Path, "launcher.db");
+    var gamesRepository = new SqliteGameRepository(path);
+    var now = DateTimeOffset.UtcNow;
+
+    var game = new Game(Guid.NewGuid(), "Different Store Title", now, now);
+    var install = new GameInstallation(
+        Guid.NewGuid(), game.Id, GameSource.Steam, "870780",
+        @"C:\Games\Control", @"C:\Games\Control\Control.exe",
+        "steam://rungameid/870780", true);
+
+    await gamesRepository.UpsertGameAsync(game);
+    await gamesRepository.UpsertInstallationAsync(install);
+
+    var session = new PlaySession(Guid.NewGuid(), game.Id, now.AddMinutes(-10), null, null);
+    await gamesRepository.AddPlaySessionAsync(session);
+    await gamesRepository.EndPlaySessionAsync(session.Id, now, 600);
+
+    var library = new GameLibraryService(
+        gamesRepository,
+        Array.Empty<IGameSourceAdapter>());
+
+    var remote = new HatchableRemoteGame(
+        4,
+        "Control: Ultimate Edition",
+        "PC, PS5",
+        870780,
+        null,
+        4,
+        "next",
+        null,
+        null,
+        0,
+        null);
+
+    var syncRepository = new MemoryHatchableSyncRepository(
+        new HatchableSyncSettings("https://example.test", "gl_test", true),
+        new[] { remote });
+    var api = new RecordingHatchableApiClient(new[] { remote });
+    var service = new HatchableSyncService(syncRepository, api, library);
+
+    var result = await service.SyncAsync();
+
+    Assert.Equal(1, result.MatchedCount);
+    Assert.Equal(1, result.PushedCount);
+    Assert.Equal(1, api.LastPush.Count);
+    Assert.Equal(4, api.LastPush[0].RemoteGameId);
+    Assert.Equal(600L, api.LastPush[0].PlaytimeSeconds);
+    Assert.Equal("playing", api.LastPush[0].ProgressStatus);
+    Assert.NotNull(api.LastPush[0].LastPlayedAt);
+}
+
 static async Task SessionServicePersistsPlaytime()
 {
     using var temp = new TempDirectory();
@@ -946,6 +1118,151 @@ file sealed class OverlayAwareGameRunHandle : IGameRunHandle
     }
 
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+}
+
+file sealed class PrefixSecretProtector : ISecretProtector
+{
+    public string Protect(string plaintext) => "protected::" + plaintext;
+
+    public string Unprotect(string protectedValue) =>
+        protectedValue.StartsWith("protected::", StringComparison.Ordinal)
+            ? protectedValue["protected::".Length..]
+            : throw new InvalidOperationException("Invalid protected value.");
+}
+
+file sealed class HatchableHttpHandler : HttpMessageHandler
+{
+    public string? LastAuthorization { get; private set; }
+    public string? LastPostBody { get; private set; }
+
+    protected override async Task<HttpResponseMessage> SendAsync(
+        HttpRequestMessage request,
+        CancellationToken cancellationToken)
+    {
+        LastAuthorization = request.Headers.Authorization?.ToString();
+
+        if (request.Method == HttpMethod.Get)
+        {
+            return JsonResponse(
+                """
+                {
+                  "version": 1,
+                  "games": [
+                    {
+                      "id": 2,
+                      "title": "Crimson Desert",
+                      "platforms": "PC, PS5",
+                      "steam_app_id": 3321460,
+                      "cover_url": null,
+                      "rank_score": 2,
+                      "status": "next",
+                      "progress_status": "playing",
+                      "rating": 8,
+                      "playtime_seconds": 7200,
+                      "last_played_at": "2026-09-21T09:00:00Z"
+                    }
+                  ]
+                }
+                """);
+        }
+
+        LastPostBody = request.Content is null
+            ? null
+            : await request.Content.ReadAsStringAsync(cancellationToken);
+
+        return JsonResponse("""{"ok":true,"updated":1}""");
+    }
+
+    private static HttpResponseMessage JsonResponse(string json) =>
+        new(HttpStatusCode.OK)
+        {
+            Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json")
+        };
+}
+
+file sealed class MemoryHatchableSyncRepository : IHatchableSyncRepository
+{
+    private HatchableSyncSettings? _settings;
+    private IReadOnlyList<HatchableRemoteGame> _games;
+
+    public MemoryHatchableSyncRepository(
+        HatchableSyncSettings? settings,
+        IReadOnlyList<HatchableRemoteGame> games)
+    {
+        _settings = settings;
+        _games = games;
+    }
+
+    public Task<HatchableSyncSettings?> GetSettingsAsync(
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult(_settings);
+
+    public Task SaveSettingsAsync(
+        HatchableSyncSettings settings,
+        CancellationToken cancellationToken = default)
+    {
+        _settings = settings.Normalize();
+        return Task.CompletedTask;
+    }
+
+    public Task ClearSettingsAsync(CancellationToken cancellationToken = default)
+    {
+        _settings = null;
+        return Task.CompletedTask;
+    }
+
+    public Task ReplaceRemoteGamesAsync(
+        IReadOnlyList<HatchableRemoteGame> games,
+        CancellationToken cancellationToken = default)
+    {
+        _games = games;
+        return Task.CompletedTask;
+    }
+
+    public Task<IReadOnlyList<HatchableRemoteGame>> GetRemoteGamesAsync(
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult(_games);
+}
+
+file sealed class RecordingHatchableApiClient : IHatchableApiClient
+{
+    private IReadOnlyList<HatchableRemoteGame> _games;
+
+    public RecordingHatchableApiClient(IReadOnlyList<HatchableRemoteGame> games)
+    {
+        _games = games;
+    }
+
+    public IReadOnlyList<HatchableGamePush> LastPush { get; private set; } =
+        Array.Empty<HatchableGamePush>();
+
+    public Task<IReadOnlyList<HatchableRemoteGame>> GetGamesAsync(
+        HatchableSyncSettings settings,
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult(_games);
+
+    public Task<int> PushGamesAsync(
+        HatchableSyncSettings settings,
+        IReadOnlyList<HatchableGamePush> games,
+        CancellationToken cancellationToken = default)
+    {
+        LastPush = games.ToArray();
+        _games = _games.Select(remote =>
+        {
+            var push = games.FirstOrDefault(x => x.RemoteGameId == remote.RemoteGameId);
+            return push is null
+                ? remote
+                : remote with
+                {
+                    ProgressStatus = push.ProgressStatus,
+                    Rating = push.Rating,
+                    PlaytimeSeconds = Math.Max(remote.PlaytimeSeconds, push.PlaytimeSeconds),
+                    LastPlayedAt = push.LastPlayedAt ?? remote.LastPlayedAt
+                };
+        }).ToArray();
+
+        return Task.FromResult(games.Count);
+    }
 }
 
 file sealed class FakeRuntime : IGameRuntime

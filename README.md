@@ -1,28 +1,58 @@
 # Game Launcher
 
-A lightweight, open-source Windows game launcher built around a local unified library. Current implementation: **Phase 4 - Gameplay Overlay**.
+A lightweight, open-source Windows game launcher built around a local unified library. Current implementation: **Phase 5 - Hatchable Sync**.
 
 ## Current features
 
-- Unified installed-game discovery for Steam, Epic, GOG, EA app, Ubisoft Connect, Battle.net, and Xbox / Microsoft Store `XboxGames` installs.
+- Installed-game discovery for Steam, Epic, GOG, EA app, Ubisoft Connect, Battle.net, and Xbox / Microsoft Store `XboxGames` installs.
 - Manual game entries.
 - Conservative cross-store duplicate reconciliation.
 - Automatic/local cover-art caching.
 - Game launching with process detection and persisted playtime.
 - Per-game smart launch profiles with pre-launch, companion, and post-game programs.
-- **Gameplay-only RTSS overlay** with:
-  - FPS
-  - GPU usage
-  - GPU temperature
-  - automatic start after the real game process is detected
-  - automatic removal when the tracked game exits
-  - configurable 250 ms to 2 second refresh interval
-  - independent telemetry toggles
-- WPF unified-library UI, launch-profile editor, and overlay settings.
+- Gameplay-only RTSS overlay with FPS, GPU usage, and GPU temperature.
+- **Hatchable synchronization** with the companion My Game Library site:
+  - pulls the ranked Next 100 list
+  - matches installed games by Steam App ID first, exact normalized title second
+  - shows Next 100 rank/status on installed game cards
+  - provides a full Next Play window for ranked games that are installed or not installed
+  - uploads cumulative tracked playtime and last-played time
+  - syncs Playing / Completed / Paused / Dropped progress
+  - syncs optional 1-10 ratings
+  - automatically syncs at startup and after gameplay when enabled
+  - keeps a local cached ranking for offline viewing
+  - stores the launcher token encrypted with Windows DPAPI
+
+## Hatchable Sync setup
+
+The default companion site is:
+
+```text
+https://my-game-library.hatchable.site
+```
+
+1. Open **Hatchable** in the launcher.
+2. Click **Open Launcher Sync page**.
+3. Sign in to the Hatchable site and create a launcher token.
+4. Copy the token into the launcher.
+5. Choose whether automatic sync should run.
+6. Click **Save & test**.
+
+The site stores only a SHA-256 hash of the device token. The Windows launcher stores the token encrypted for the current Windows user through DPAPI.
+
+### Sync ownership rules
+
+- The Hatchable site remains authoritative for **Next 100 ranking** and the existing **Played / Play next / Didn't like** preference.
+- The launcher contributes cumulative **playtime** and **last played**.
+- Progress state and 1-10 rating may be edited from either the website or the launcher.
+- Local tracked playtime never decreases the remote total.
+- Starting a locally matched game with tracked playtime can set progress to **Playing** when no progress has been chosen yet.
+- Marking progress **Completed** updates the website preference to **Played**, except an explicit **Didn't like** preference is preserved.
+- Network/sync failures never block launching or local playtime tracking.
 
 ## Gameplay overlay
 
-Open **Overlay** in the launcher to configure the HUD.
+RTSS must be installed for the in-game OSD. MSI Afterburner is not required.
 
 Default display:
 
@@ -30,26 +60,16 @@ Default display:
 FPS 60  |  GPU 73%  |  TEMP 65C
 ```
 
-The launcher reads FPS from RTSS for the **specific tracked game process** and GPU load/temperature from LibreHardwareMonitor.
-
-### RTSS requirement
-
-RivaTuner Statistics Server (RTSS) must be installed on Windows for the in-game OSD. It is **not bundled** with this repository.
-
-If RTSS is installed but not running, the launcher starts it automatically when a game session begins. RTSS may remain running after the game, but the Game Launcher OSD slot is cleared as soon as the tracked game process exits.
-
-MSI Afterburner is not required.
-
-If RTSS or hardware telemetry is unavailable, the overlay fails safely and the game still launches and playtime still tracks.
-
 ## Stack
 
 - C# / .NET 10 LTS
 - WPF
 - SQLite via `Microsoft.Data.Sqlite`
-- LibreHardwareMonitorLib 0.9.6 for GPU telemetry
-- RTSS `RTSSSharedMemoryV2` for per-process FPS and in-game OSD
-- No ORM, DI framework, MVVM framework, account credentials, or private launcher APIs.
+- LibreHardwareMonitorLib 0.9.6
+- RTSS `RTSSSharedMemoryV2`
+- Windows DPAPI via `System.Security.Cryptography.ProtectedData`
+- Hatchable companion web application/API
+- No ORM, DI framework, MVVM framework, or private launcher APIs.
 
 ## Build
 
@@ -69,7 +89,7 @@ Run:
 .\run.ps1
 ```
 
-Local data:
+Local launcher data:
 
 ```text
 %LocalAppData%\MyGameLauncher\
@@ -81,13 +101,13 @@ Local data:
 - Phase 1: Core MVP - complete
 - Phase 2: Unified Library - complete
 - Phase 3: Smart Launching - complete
-- **Phase 4: Gameplay Overlay - current**
-- Phase 5: Hatchable Sync
+- Phase 4: Gameplay Overlay - complete
+- **Phase 5: Hatchable Sync - current**
 - Phase 6: Graphics Optimizer
 - Phase 7: History + Console Accounts
 - Phase 8: Final Product
 
-See `PHASE4_NOTES.md` for implementation boundaries.
+See `PHASE5_NOTES.md` for implementation boundaries.
 
 ## License
 

@@ -6,7 +6,9 @@ using GameLauncher.Infrastructure.Metadata;
 using GameLauncher.Infrastructure.Overlay;
 using GameLauncher.Infrastructure.Repositories;
 using GameLauncher.Infrastructure.Runtime;
+using GameLauncher.Infrastructure.Security;
 using GameLauncher.Infrastructure.Storage;
+using GameLauncher.Infrastructure.Sync;
 
 namespace GameLauncher.App;
 
@@ -22,6 +24,9 @@ public partial class App : Application
         var repository = new SqliteGameRepository(paths.DatabasePath);
         var launchProfilesRepository = new SqliteLaunchProfileRepository(paths.DatabasePath);
         var overlaySettingsRepository = new SqliteOverlaySettingsRepository(paths.DatabasePath);
+        var hatchableRepository = new SqliteHatchableSyncRepository(
+            paths.DatabasePath,
+            new DpapiSecretProtector());
 
         IGameSourceAdapter[] adapters =
         [
@@ -49,7 +54,17 @@ public partial class App : Application
             sessions,
             new WindowsExternalProgramRuntime());
 
-        var window = new MainWindow(library, smartLaunch, profiles, overlay);
+        var hatchable = new HatchableSyncService(
+            hatchableRepository,
+            new HatchableApiClient(),
+            library);
+
+        var window = new MainWindow(
+            library,
+            smartLaunch,
+            profiles,
+            overlay,
+            hatchable);
         window.Show();
     }
 }
