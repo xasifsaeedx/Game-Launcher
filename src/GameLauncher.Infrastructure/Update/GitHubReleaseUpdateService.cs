@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Net.Http.Json;
 using System.Text.Json.Serialization;
 using GameLauncher.Core.Models;
@@ -57,7 +56,8 @@ public sealed class GitHubReleaseUpdateService : ILauncherUpdateService
                 StringComparison.OrdinalIgnoreCase));
 
         if (installerAsset?.BrowserDownloadUrl is not null &&
-            Uri.TryCreate(installerAsset.BrowserDownloadUrl, UriKind.Absolute, out var parsed))
+            Uri.TryCreate(installerAsset.BrowserDownloadUrl, UriKind.Absolute, out var parsed) &&
+            parsed.Scheme == Uri.UriSchemeHttps)
         {
             installer = parsed;
         }
@@ -66,7 +66,7 @@ public sealed class GitHubReleaseUpdateService : ILauncherUpdateService
             currentVersion,
             latest,
             release.Name ?? release.TagName ?? $"v{latest}",
-            new Uri(release.HtmlUrl ?? "https://github.com/xasifsaeedx/Game-Launcher/releases"),
+            ParseReleasePage(release.HtmlUrl),
             installer,
             latest > currentVersion);
     }
@@ -107,6 +107,17 @@ public sealed class GitHubReleaseUpdateService : ILauncherUpdateService
 
         File.Move(temporary, path, overwrite: true);
         return path;
+    }
+
+    private static Uri ParseReleasePage(string? value)
+    {
+        if (Uri.TryCreate(value, UriKind.Absolute, out var uri) &&
+            uri.Scheme == Uri.UriSchemeHttps)
+        {
+            return uri;
+        }
+
+        return new Uri("https://github.com/xasifsaeedx/Game-Launcher/releases");
     }
 
     private sealed record GitHubRelease(
