@@ -81,10 +81,7 @@ public partial class MainWindow : Window
             _library,
             _hatchable,
             _preferences,
-            _play)
-        {
-            Owner = this
-        };
+            _play);
 
         Hide();
         try
