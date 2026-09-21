@@ -41,6 +41,7 @@
                 <Button Content="History" Margin="0,0,7,0" Click="HistoryButton_Click"/>
                 <Button Content="Graphics" Margin="0,0,7,0" Click="GraphicsButton_Click"/>
                 <Button Content="Next Play" Margin="0,0,7,0" Click="NextPlayButton_Click"/>
+                <Button Content="Hatchable" Margin="0,0,7,0" Click="HatchableButton_Click"/>
                 <Button Content="Overlay" Margin="0,0,7,0" Click="OverlayButton_Click"/>
                 <Button Content="Tools" Margin="0,0,7,0" Click="ToolsButton_Click"/>
                 <Button x:Name="SyncLibraryButton" Content="Sync" Margin="0,0,7,0" Click="SyncLibraryButton_Click"/>
