@@ -55,7 +55,7 @@
         <StackPanel Grid.Row="6" Orientation="Horizontal" HorizontalAlignment="Right">
             <Button Content="Disconnect" Margin="0,0,8,0" Click="Disconnect_Click"/>
             <Button Content="Sync now" Margin="0,0,8,0" Click="SyncNow_Click"/>
-            <Button Content="Save & test" FontWeight="SemiBold" Click="Save_Click"/>
+            <Button Content="Save &amp; test" FontWeight="SemiBold" Click="Save_Click"/>
         </StackPanel>
     </Grid>
 </Window>
