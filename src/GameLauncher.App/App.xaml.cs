@@ -1,9 +1,11 @@
 using System.Windows;
 using GameLauncher.Core.Adapters;
+using GameLauncher.Core.History;
 using GameLauncher.Core.Services;
 using GameLauncher.Infrastructure.Adapters;
 using GameLauncher.Infrastructure.Graphics;
 using GameLauncher.Infrastructure.Hardware;
+using GameLauncher.Infrastructure.History;
 using GameLauncher.Infrastructure.Metadata;
 using GameLauncher.Infrastructure.Overlay;
 using GameLauncher.Infrastructure.Repositories;
@@ -27,9 +29,14 @@ public partial class App : Application
         var launchProfilesRepository = new SqliteLaunchProfileRepository(paths.DatabasePath);
         var overlaySettingsRepository = new SqliteOverlaySettingsRepository(paths.DatabasePath);
         var graphicsRepository = new SqliteGraphicsOptimizerRepository(paths.DatabasePath);
+        var secretProtector = new DpapiSecretProtector();
         var hatchableRepository = new SqliteHatchableSyncRepository(
             paths.DatabasePath,
-            new DpapiSecretProtector());
+            secretProtector);
+        var historyRepository = new SqliteGameHistoryRepository(paths.DatabasePath);
+        var steamHistorySettings = new SqliteSteamHistorySettingsRepository(
+            paths.DatabasePath,
+            secretProtector);
 
         IGameSourceAdapter[] adapters =
         [
@@ -69,13 +76,25 @@ public partial class App : Application
             new HatchableApiClient(),
             library);
 
+        var history = new GameHistoryService(
+            historyRepository,
+            steamHistorySettings,
+            new SteamHistoryApiClient(),
+            new IHistoryFileParser[]
+            {
+                new PlayStationExcelHistoryParser(),
+                new GenericHistoryFileParser()
+            },
+            library);
+
         var window = new MainWindow(
             library,
             smartLaunch,
             profiles,
             overlay,
             hatchable,
-            graphics);
+            graphics,
+            history);
         window.Show();
     }
 }
