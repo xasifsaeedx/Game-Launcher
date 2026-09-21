@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using GameLauncher.Core.Models;
 using GameLauncher.Core.Services;
 
 namespace GameLauncher.App;
@@ -11,6 +12,7 @@ public partial class MainWindow : Window
     private readonly LaunchProfileService _profiles;
     private readonly GameplayOverlayService _overlay;
     private readonly HatchableSyncService _hatchable;
+    private readonly GraphicsOptimizerService _graphics;
     private readonly CancellationTokenSource _lifetime = new();
     private IReadOnlyList<GameCardViewModel> _cards = Array.Empty<GameCardViewModel>();
 
@@ -19,7 +21,8 @@ public partial class MainWindow : Window
         SmartLaunchService smartLaunch,
         LaunchProfileService profiles,
         GameplayOverlayService overlay,
-        HatchableSyncService hatchable)
+        HatchableSyncService hatchable,
+        GraphicsOptimizerService graphics)
     {
         InitializeComponent();
         _library = library ?? throw new ArgumentNullException(nameof(library));
@@ -27,6 +30,7 @@ public partial class MainWindow : Window
         _profiles = profiles ?? throw new ArgumentNullException(nameof(profiles));
         _overlay = overlay ?? throw new ArgumentNullException(nameof(overlay));
         _hatchable = hatchable ?? throw new ArgumentNullException(nameof(hatchable));
+        _graphics = graphics ?? throw new ArgumentNullException(nameof(graphics));
         Loaded += MainWindow_Loaded;
         Closed += (_, _) => _lifetime.Cancel();
     }
@@ -35,6 +39,11 @@ public partial class MainWindow : Window
     {
         Loaded -= MainWindow_Loaded;
         await SyncAndRefreshAsync();
+    }
+
+    private void GraphicsButton_Click(object sender, RoutedEventArgs e)
+    {
+        new GraphicsOptimizerWindow(_graphics, _library) { Owner = this }.ShowDialog();
     }
 
     private void OverlayButton_Click(object sender, RoutedEventArgs e)
@@ -101,7 +110,9 @@ public partial class MainWindow : Window
         button.IsEnabled = false;
         try
         {
+            var graphicsWarning = await TryAutoGraphicsApplyAsync(card.Item);
             StatusText.Text = $"Launching {card.Title}...";
+
             var completed = await _smartLaunch.LaunchAsync(
                 card.Item,
                 cancellationToken: _lifetime.Token);
@@ -111,6 +122,7 @@ public partial class MainWindow : Window
 
             StatusText.Text =
                 $"{card.Title} session saved ({GameCardViewModel.FormatPlaytime(completed.DurationSeconds ?? 0)})." +
+                (graphicsWarning is null ? string.Empty : $" Graphics: {graphicsWarning}") +
                 (syncWarning is null ? string.Empty : $" Hatchable: {syncWarning}");
         }
         catch (OperationCanceledException)
@@ -134,6 +146,36 @@ public partial class MainWindow : Window
         if (card is null) return;
 
         new LaunchProfileWindow(card.Item, _profiles) { Owner = this }.ShowDialog();
+    }
+
+    private async Task<string?> TryAutoGraphicsApplyAsync(GameLibraryItem item)
+    {
+        try
+        {
+            if (!await _graphics.ShouldAutoApplyBeforeLaunchAsync(_lifetime.Token))
+            {
+                return null;
+            }
+
+            var recommendation = await _graphics.RecommendAsync(item, _lifetime.Token);
+            if (!recommendation.CanApplyAutomatically)
+            {
+                return null;
+            }
+
+            var result = await _graphics.ApplySafeSettingsAsync(item, _lifetime.Token);
+            return result.Warnings.Count == 0
+                ? null
+                : string.Join(" ", result.Warnings);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            return ex.Message;
+        }
     }
 
     private async Task SyncAndRefreshAsync()
