@@ -60,6 +60,7 @@ var tests = new (string Name, Func<Task> Run)[]
     ("Steam history credentials are protected at rest", SteamHistoryCredentialsAreProtectedAtRest),
     ("Generic CSV history importer reads flexible columns", GenericCsvHistoryImporterReadsFlexibleColumns),
     ("Generic JSON history importer reads games array", GenericJsonHistoryImporterReadsGamesArray),
+    ("Generic JSON history importer skips unrelated arrays", GenericJsonHistoryImporterSkipsUnrelatedArrays),
     ("PlayStation Excel history importer reads game worksheet", PlayStationExcelHistoryImporterReadsGameWorksheet),
     ("History repository keeps largest account snapshot", HistoryRepositoryKeepsLargestSnapshot),
     ("History service keeps account and launcher playtime separate", HistoryServiceKeepsPlaytimeSeparate),
@@ -1142,6 +1143,38 @@ static async Task GenericJsonHistoryImporterReadsGamesArray()
     Assert.Equal("Assassin's Creed Odyssey", games[0].Title);
     Assert.Equal("ac-odyssey", games[0].ExternalId);
     Assert.Equal<long?>(5400L, games[0].PlaytimeSeconds);
+}
+
+static async Task GenericJsonHistoryImporterSkipsUnrelatedArrays()
+{
+    using var temp = new TempDirectory();
+    var path = Path.Combine(temp.Path, "mixed.json");
+    await File.WriteAllTextAsync(
+        path,
+        """
+        {
+          "friends": [
+            { "name": "Not A Game", "id": "friend-1" }
+          ],
+          "account": {
+            "library": [
+              {
+                "gameTitle": "Dishonored",
+                "productId": "dishonored",
+                "hoursPlayed": 4
+              }
+            ]
+          }
+        }
+        """);
+
+    var parser = new GenericHistoryFileParser();
+    var games = await parser.ParseAsync(GameSource.EA, path);
+
+    Assert.Equal(1, games.Count);
+    Assert.Equal("Dishonored", games[0].Title);
+    Assert.Equal("dishonored", games[0].ExternalId);
+    Assert.Equal<long?>(14400L, games[0].PlaytimeSeconds);
 }
 
 static async Task PlayStationExcelHistoryImporterReadsGameWorksheet()
