@@ -33,9 +33,7 @@ public static class GraphicsRecommendationPolicy
                 _ => "Ultra"
             },
             GraphicsPerformanceTier.Enthusiast => "Ultra",
-            _ => preference == GraphicsQualityPreference.Performance
-                ? "Medium"
-                : "High"
+            _ => "Manual"
         };
 
     public static IReadOnlyList<string> BuildGeneralTips(
@@ -45,11 +43,19 @@ public static class GraphicsRecommendationPolicy
         var tips = new List<string>
         {
             $"Resolution: {target.TargetWidth}x{target.TargetHeight}.",
-            $"Frame-rate target: {target.TargetFps} FPS.",
-            $"Start from the {RecommendPreset(tier, target.QualityPreference)} preset."
+            $"Frame-rate target: {target.TargetFps} FPS."
         };
 
-        if (tier <= GraphicsPerformanceTier.Mainstream1080p || tier == GraphicsPerformanceTier.Unknown)
+        if (tier == GraphicsPerformanceTier.Unknown)
+        {
+            tips.Add("GPU tier is unknown. Choose a manual tier or use the game's benchmark before selecting a quality preset.");
+            tips.Add("No automatic quality preset is assumed for unknown hardware.");
+            return tips;
+        }
+
+        tips.Add($"Start from the {RecommendPreset(tier, target.QualityPreference)} preset.");
+
+        if (tier <= GraphicsPerformanceTier.Mainstream1080p)
         {
             tips.Add("Ray tracing: Off unless a game-specific profile says otherwise.");
             tips.Add("MSAA / supersampling: Off; prefer temporal AA or a quality upscaler when needed.");
