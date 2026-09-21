@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http;
+using System.Xml.Linq;
 using GameLauncher.Core.Adapters;
 using GameLauncher.Core.Models;
 using GameLauncher.Core.Repositories;
@@ -1006,6 +1007,7 @@ static async Task SafeXmlGraphicsPatchChangesExistingFieldsOnly()
     var runtime = new SafeGraphicsConfigRuntime();
     var applied = await runtime.ApplyAsync(recommendation, hardware);
     var updated = await File.ReadAllTextAsync(path);
+    _ = XDocument.Parse(updated);
 
     Assert.True(applied.Changed);
     Assert.True(updated.Contains("ScreenWidth value=\"1920\"", StringComparison.Ordinal));
