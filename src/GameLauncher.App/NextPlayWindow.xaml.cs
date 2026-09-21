@@ -9,6 +9,8 @@ public partial class NextPlayWindow : Window
 {
     private readonly HatchableSyncService _sync;
     private readonly GameLibraryService _library;
+    private readonly Choice<string?>[] _progressChoices;
+    private readonly Choice<int?>[] _ratingChoices;
     private IReadOnlyList<NextPlayGameViewModel> _rows = Array.Empty<NextPlayGameViewModel>();
 
     public NextPlayWindow(
@@ -19,21 +21,23 @@ public partial class NextPlayWindow : Window
         _sync = sync ?? throw new ArgumentNullException(nameof(sync));
         _library = library ?? throw new ArgumentNullException(nameof(library));
 
-        ProgressComboBox.ItemsSource = new[]
-        {
-            new Choice<string?>(null, "Not started"),
-            new Choice<string?>("playing", "Playing"),
-            new Choice<string?>("completed", "Completed"),
-            new Choice<string?>("paused", "Paused"),
-            new Choice<string?>("dropped", "Dropped")
-        };
+        _progressChoices =
+        [
+            new(null, "Not started"),
+            new("playing", "Playing"),
+            new("completed", "Completed"),
+            new("paused", "Paused"),
+            new("dropped", "Dropped")
+        ];
+        ProgressComboBox.ItemsSource = _progressChoices;
 
         var ratings = new List<Choice<int?>> { new(null, "Not rated") };
         ratings.AddRange(
             Enumerable.Range(1, 10)
                 .Reverse()
                 .Select(x => new Choice<int?>(x, $"{x} / 10")));
-        RatingComboBox.ItemsSource = ratings;
+        _ratingChoices = ratings.ToArray();
+        RatingComboBox.ItemsSource = _ratingChoices;
 
         Loaded += NextPlayWindow_Loaded;
     }
@@ -58,8 +62,16 @@ public partial class NextPlayWindow : Window
         }
 
         SelectedTitleText.Text = $"#{selected.Rank}  {selected.Title}";
-        ProgressComboBox.SelectedValue = selected.Remote.ProgressStatus;
-        RatingComboBox.SelectedValue = selected.Remote.Rating;
+        ProgressComboBox.SelectedItem =
+            _progressChoices.First(x =>
+                string.Equals(
+                    x.Value,
+                    selected.Remote.ProgressStatus,
+                    StringComparison.OrdinalIgnoreCase));
+
+        RatingComboBox.SelectedItem =
+            _ratingChoices.First(x => x.Value == selected.Remote.Rating);
+
         SelectionStatusText.Text =
             $"{selected.LibraryStatus} · {selected.Playtime}" +
             (selected.IsInstalled ? " · Installed locally" : string.Empty);
@@ -72,8 +84,14 @@ public partial class NextPlayWindow : Window
         try
         {
             SelectionStatusText.Text = "Saving...";
-            var progress = ProgressComboBox.SelectedValue as string;
-            var rating = RatingComboBox.SelectedValue is int value ? value : (int?)null;
+
+            var progress = ProgressComboBox.SelectedItem is Choice<string?> progressChoice
+                ? progressChoice.Value
+                : null;
+            var rating = RatingComboBox.SelectedItem is Choice<int?> ratingChoice
+                ? ratingChoice.Value
+                : null;
+
             await _sync.UpdateRemoteStateAsync(
                 selected.RemoteGameId,
                 progress,

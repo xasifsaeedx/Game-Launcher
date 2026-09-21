@@ -9,7 +9,7 @@ public sealed record HatchableSyncSettings(
 
     public bool IsConfigured =>
         Uri.TryCreate(BaseUrl, UriKind.Absolute, out var uri) &&
-        (uri.Scheme == Uri.UriSchemeHttps || uri.Scheme == Uri.UriSchemeHttp) &&
+        uri.Scheme == Uri.UriSchemeHttps &&
         !string.IsNullOrWhiteSpace(Token);
 
     public HatchableSyncSettings Normalize()

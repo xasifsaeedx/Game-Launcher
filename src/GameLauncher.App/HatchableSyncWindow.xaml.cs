@@ -33,11 +33,25 @@ public partial class HatchableSyncWindow : Window
 
     private void OpenPairingPage_Click(object sender, RoutedEventArgs e)
     {
-        var baseUrl = NormalizeBaseUrl();
-        Process.Start(new ProcessStartInfo(baseUrl + "/launcher")
+        try
         {
-            UseShellExecute = true
-        });
+            var baseUrl = NormalizeBaseUrl();
+            if (!Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri) ||
+                uri.Scheme != Uri.UriSchemeHttps)
+            {
+                StatusText.Text = "Hatchable Sync requires an HTTPS site URL.";
+                return;
+            }
+
+            Process.Start(new ProcessStartInfo(baseUrl + "/launcher")
+            {
+                UseShellExecute = true
+            });
+        }
+        catch (Exception ex)
+        {
+            StatusText.Text = ex.Message;
+        }
     }
 
     private async void Save_Click(object sender, RoutedEventArgs e)

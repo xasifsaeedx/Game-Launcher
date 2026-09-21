@@ -39,6 +39,7 @@ var tests = new (string Name, Func<Task> Run)[]
     ("Overlay settings persist and normalize", OverlaySettingsPersistAndNormalize),
     ("Overlay service skips disabled overlay", OverlayServiceSkipsDisabledOverlay),
     ("Session service owns overlay lifecycle", SessionServiceOwnsOverlayLifecycle),
+    ("Hatchable settings require HTTPS", HatchableSettingsRequireHttps),
     ("Hatchable matching prefers Steam app ID", HatchableMatchingPrefersSteamId),
     ("Hatchable matching falls back to exact normalized title", HatchableMatchingFallsBackToTitle),
     ("Hatchable settings are protected at rest", HatchableSettingsAreProtectedAtRest),
@@ -599,6 +600,23 @@ static async Task SessionServiceOwnsOverlayLifecycle()
             "overlay:dispose"
         },
         events);
+}
+
+static Task HatchableSettingsRequireHttps()
+{
+    Assert.True(
+        new HatchableSyncSettings(
+            "https://example.hatchable.site",
+            "gl_test",
+            true).IsConfigured);
+
+    Assert.True(
+        !new HatchableSyncSettings(
+            "http://example.hatchable.site",
+            "gl_test",
+            true).IsConfigured);
+
+    return Task.CompletedTask;
 }
 
 static Task HatchableMatchingPrefersSteamId()
