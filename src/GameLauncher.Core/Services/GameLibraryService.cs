@@ -39,6 +39,10 @@ public sealed class GameLibraryService
                 var discovered = await adapter.DiscoverInstalledGamesAsync(cancellationToken);
                 discoveredCount += discovered.Count;
 
+                await _repository.MarkSourceInstallationsNotInstalledAsync(
+                    adapter.Source,
+                    cancellationToken);
+
                 foreach (var item in discovered)
                 {
                     if (item.Installation.GameId != item.Game.Id)
@@ -142,9 +146,12 @@ public sealed class GameLibraryService
         foreach (var game in games)
         {
             var installations = await _repository.GetInstallationsAsync(game.Id, cancellationToken);
+            var installed = installations.Where(x => x.IsInstalled).ToArray();
+            if (installed.Length == 0) continue;
+
             var playtime = await _repository.GetTotalPlaytimeSecondsAsync(game.Id, cancellationToken);
             var lastPlayed = await _repository.GetLastPlayedUtcAsync(game.Id, cancellationToken);
-            rawItems.Add(new GameLibraryItem(game, installations, playtime, lastPlayed));
+            rawItems.Add(new GameLibraryItem(game, installed, playtime, lastPlayed));
         }
 
         return rawItems

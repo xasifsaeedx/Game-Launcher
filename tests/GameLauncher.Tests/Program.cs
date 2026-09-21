@@ -24,6 +24,7 @@ var tests = new (string Name, Func<Task> Run)[]
     ("SQLite repository totals completed play sessions", RepositoryTotalsPlaySessions),
     ("Library service adds a manual game", LibraryServiceAddsManualGame),
     ("Source sync remains idempotent", SourceSyncRemainsIdempotent),
+    ("Source rescan retires removed installations", SourceRescanRetiresRemovedInstallations),
     ("Unified library merges exact normalized titles", UnifiedLibraryMergesExactTitles),
     ("Steam artwork enricher caches cover art", SteamArtworkEnricherCachesCover),
     ("Session service persists runtime playtime", SessionServicePersistsPlaytime)
@@ -266,6 +267,27 @@ static async Task SourceSyncRemainsIdempotent()
     Assert.Equal(1, library[0].Installations.Count);
 }
 
+static async Task SourceRescanRetiresRemovedInstallations()
+{
+    using var temp = new TempDirectory();
+    var repository = new SqliteGameRepository(Path.Combine(temp.Path, "launcher.db"));
+    var adapter = new MutableAdapter(
+        "epic",
+        GameSource.Epic,
+        "control-epic",
+        "Control");
+
+    var service = new GameLibraryService(repository, new IGameSourceAdapter[] { adapter });
+
+    await service.SyncSourcesAsync();
+    Assert.Equal(1, (await service.GetLibraryAsync()).Count);
+
+    adapter.IsInstalled = false;
+    await service.SyncSourcesAsync();
+
+    Assert.Equal(0, (await service.GetLibraryAsync()).Count);
+}
+
 static async Task UnifiedLibraryMergesExactTitles()
 {
     using var temp = new TempDirectory();
@@ -355,6 +377,57 @@ file sealed class FixedAdapter : IGameSourceAdapter
     public Task<IReadOnlyList<DiscoveredGame>> DiscoverInstalledGamesAsync(
         CancellationToken cancellationToken = default) =>
         Task.FromResult<IReadOnlyList<DiscoveredGame>>(new[] { _game });
+}
+
+file sealed class MutableAdapter : IGameSourceAdapter
+{
+    private readonly string _externalId;
+    private readonly string _title;
+
+    public MutableAdapter(string id, GameSource source, string externalId, string title)
+    {
+        Id = id;
+        DisplayName = id;
+        Source = source;
+        _externalId = externalId;
+        _title = title;
+    }
+
+    public string Id { get; }
+    public string DisplayName { get; }
+    public GameSource Source { get; }
+    public bool IsInstalled { get; set; } = true;
+
+    public Task<IReadOnlyList<DiscoveredGame>> DiscoverInstalledGamesAsync(
+        CancellationToken cancellationToken = default)
+    {
+        if (!IsInstalled)
+        {
+            return Task.FromResult<IReadOnlyList<DiscoveredGame>>(
+                Array.Empty<DiscoveredGame>());
+        }
+
+        var gameId = StableId.FromText($"{Id}-game:{_externalId}");
+        var installId = StableId.FromText($"{Id}-install:{_externalId}");
+        var now = DateTimeOffset.UtcNow;
+
+        IReadOnlyList<DiscoveredGame> result =
+        [
+            new DiscoveredGame(
+                new Game(gameId, _title, now, now),
+                new GameInstallation(
+                    installId,
+                    gameId,
+                    Source,
+                    _externalId,
+                    $@"C:\Games\{Id}\{_externalId}",
+                    null,
+                    null,
+                    true))
+        ];
+
+        return Task.FromResult(result);
+    }
 }
 
 file sealed class StaticHttpHandler : HttpMessageHandler

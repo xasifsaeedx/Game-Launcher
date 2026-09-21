@@ -18,6 +18,10 @@ public interface IGameRepository
         Guid gameId,
         CancellationToken cancellationToken = default);
 
+    Task MarkSourceInstallationsNotInstalledAsync(
+        GameSource source,
+        CancellationToken cancellationToken = default);
+
     Task AddPlaySessionAsync(PlaySession session, CancellationToken cancellationToken = default);
 
     Task EndPlaySessionAsync(
