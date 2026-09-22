@@ -6,16 +6,16 @@ public sealed class LauncherPlayService
 {
     private readonly SmartLaunchService _smartLaunch;
     private readonly GraphicsOptimizerService _graphics;
-    private readonly HatchableSyncService _hatchable;
+    private readonly PersonalLibraryService _personalLibrary;
 
     public LauncherPlayService(
         SmartLaunchService smartLaunch,
         GraphicsOptimizerService graphics,
-        HatchableSyncService hatchable)
+        PersonalLibraryService personalLibrary)
     {
         _smartLaunch = smartLaunch ?? throw new ArgumentNullException(nameof(smartLaunch));
         _graphics = graphics ?? throw new ArgumentNullException(nameof(graphics));
-        _hatchable = hatchable ?? throw new ArgumentNullException(nameof(hatchable));
+        _personalLibrary = personalLibrary ?? throw new ArgumentNullException(nameof(personalLibrary));
     }
 
     public async Task<LauncherPlayResult> LaunchAsync(
@@ -28,12 +28,12 @@ public sealed class LauncherPlayService
         var session = await _smartLaunch.LaunchAsync(
             item,
             cancellationToken: cancellationToken);
-        var hatchableWarning = await TryHatchableSyncAsync(cancellationToken);
+        var libraryWarning = await TryPersonalLibraryRefreshAsync(cancellationToken);
 
         return new LauncherPlayResult(
             session,
             graphicsWarning,
-            hatchableWarning);
+            libraryWarning);
     }
 
     private async Task<string?> TryApplyGraphicsAsync(
@@ -65,17 +65,17 @@ public sealed class LauncherPlayService
         }
     }
 
-    private async Task<string?> TryHatchableSyncAsync(
+    private async Task<string?> TryPersonalLibraryRefreshAsync(
         CancellationToken cancellationToken)
     {
         try
         {
-            if (!await _hatchable.IsAutoSyncEnabledAsync(cancellationToken))
+            if (!await _personalLibrary.IsAutoSyncEnabledAsync(cancellationToken))
             {
                 return null;
             }
 
-            await _hatchable.SyncAsync(cancellationToken);
+            await _personalLibrary.SyncAsync(cancellationToken);
             return null;
         }
         catch (OperationCanceledException)
