@@ -94,19 +94,24 @@ public sealed class LauncherBackupService
         var sourceBuilder = new SqliteConnectionStringBuilder
         {
             DataSource = databasePath,
-            Mode = SqliteOpenMode.ReadOnly
+            Mode = SqliteOpenMode.ReadOnly,
+            Pooling = false
         };
         var destinationBuilder = new SqliteConnectionStringBuilder
         {
             DataSource = snapshot,
-            Mode = SqliteOpenMode.ReadWriteCreate
+            Mode = SqliteOpenMode.ReadWriteCreate,
+            Pooling = false
         };
 
-        await using var source = new SqliteConnection(sourceBuilder.ToString());
-        await using var destination = new SqliteConnection(destinationBuilder.ToString());
-        await source.OpenAsync(cancellationToken);
-        await destination.OpenAsync(cancellationToken);
-        source.BackupDatabase(destination);
+        await using (var source = new SqliteConnection(sourceBuilder.ToString()))
+        await using (var destination = new SqliteConnection(destinationBuilder.ToString()))
+        {
+            await source.OpenAsync(cancellationToken);
+            await destination.OpenAsync(cancellationToken);
+            source.BackupDatabase(destination);
+        }
+
         return snapshot;
     }
 
