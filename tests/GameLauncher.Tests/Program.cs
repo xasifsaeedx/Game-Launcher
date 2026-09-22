@@ -54,6 +54,8 @@ var tests = new (string Name, Func<Task> Run)[]
     ("Hatchable settings are protected at rest", HatchableSettingsAreProtectedAtRest),
     ("Hatchable API client parses and pushes sync data", HatchableApiClientParsesAndPushes),
     ("Hatchable sync pushes local playtime as playing", HatchableSyncPushesLocalPlaytime),
+    ("Google Sheets URL converts to CSV export", GoogleSheetsUrlConvertsToCsvExport),
+    ("Google Sheets library parser reads flexible columns", GoogleSheetsLibraryParserReadsFlexibleColumns),
     ("Graphics tier recognizes GTX 1660 Super", GraphicsTierRecognizesGtx1660Super),
     ("Graphics recommendation targets 1080p quality safely", GraphicsRecommendationTargetsQuality),
     ("Graphics catalog matches Steam ID before title", GraphicsCatalogMatchesSteamId),
@@ -69,6 +71,8 @@ var tests = new (string Name, Func<Task> Run)[]
     ("History repository keeps largest account snapshot", HistoryRepositoryKeepsLargestSnapshot),
     ("History service keeps account and launcher playtime separate", HistoryServiceKeepsPlaytimeSeparate),
     ("Game preferences persist favorites", GamePreferencesPersistFavorites),
+    ("Game preferences persist ratings", GamePreferencesPersistRatings),
+    ("Game preference schema migrates ratings", GamePreferenceSchemaMigratesRatings),
     ("Library presentation policy handles search and filters", LibraryPresentationPolicyHandlesSearchAndFilters),
     ("Launcher backup creates usable ZIP", LauncherBackupCreatesUsableZip),
     ("History CSV export escapes values", HistoryCsvExportEscapesValues),
@@ -100,7 +104,7 @@ if (failures.Count > 0)
 }
 else
 {
-    Console.WriteLine($"All {tests.Length} Phase 8 tests passed.");
+    Console.WriteLine($"All {tests.Length} launcher tests passed.");
 }
 
 static Task AppPathsCreatesExpectedFolders()
@@ -812,6 +816,38 @@ static async Task HatchableSyncPushesLocalPlaytime()
     Assert.NotNull(api.LastPush[0].LastPlayedAt);
 }
 
+static Task GoogleSheetsUrlConvertsToCsvExport()
+{
+    var uri = GoogleSheetsPersonalLibraryClient.BuildCsvUri(
+        "https://docs.google.com/spreadsheets/d/abc123/edit#gid=456");
+
+    Assert.Equal(
+        "https://docs.google.com/spreadsheets/d/abc123/export?format=csv&gid=456",
+        uri.ToString());
+
+    return Task.CompletedTask;
+}
+
+static Task GoogleSheetsLibraryParserReadsFlexibleColumns()
+{
+    const string csv =
+        "Game Title,Platform,Steam App ID,Rank,Status,Progress,Rating\n" +
+        "Control Ultimate Edition,PC,870780,4,next,playing,9\n" +
+        "Ghost of Yotei,PS5,,2,next,,10\n";
+
+    var games = GoogleSheetsPersonalLibraryClient.Parse(csv);
+
+    Assert.Equal(2, games.Count);
+    Assert.Equal("Ghost of Yotei", games[0].Title);
+    Assert.Equal<int?>(2, games[0].Rank);
+    Assert.Equal<int?>(10, games[0].SheetRating);
+    Assert.Equal("Control Ultimate Edition", games[1].Title);
+    Assert.Equal<long?>(870780L, games[1].SteamAppId);
+    Assert.Equal("playing", games[1].ProgressStatus);
+
+    return Task.CompletedTask;
+}
+
 static Task GraphicsTierRecognizesGtx1660Super()
 {
     Assert.Equal(
@@ -1344,6 +1380,57 @@ static async Task GamePreferencesPersistFavorites()
     Assert.NotNull(second);
     Assert.True(!second!.IsFavorite);
     Assert.Equal(1, (await repository.GetAllAsync()).Count);
+}
+
+static async Task GamePreferencesPersistRatings()
+{
+    using var temp = new TempDirectory();
+    var repository = new SqliteGamePreferenceRepository(
+        Path.Combine(temp.Path, "launcher.db"));
+
+    await repository.SetFavoriteAsync("control", true);
+    await repository.SetRatingAsync("control", 9);
+
+    var rated = await repository.GetAsync("control");
+    Assert.NotNull(rated);
+    Assert.True(rated!.IsFavorite);
+    Assert.Equal<int?>(9, rated.Rating);
+
+    await repository.SetRatingAsync("control", null);
+    var cleared = await repository.GetAsync("control");
+    Assert.NotNull(cleared);
+    Assert.True(cleared!.IsFavorite);
+    Assert.Equal<int?>(null, cleared.Rating);
+}
+
+static async Task GamePreferenceSchemaMigratesRatings()
+{
+    using var temp = new TempDirectory();
+    var path = Path.Combine(temp.Path, "launcher.db");
+
+    await using (var connection = new SqliteConnection($"Data Source={path}"))
+    {
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            CREATE TABLE game_preferences(
+                game_key TEXT PRIMARY KEY NOT NULL,
+                is_favorite INTEGER NOT NULL,
+                updated_utc TEXT NOT NULL
+            );
+            INSERT INTO game_preferences(game_key, is_favorite, updated_utc)
+            VALUES('control', 1, '2026-09-21T00:00:00Z');
+            """;
+        await command.ExecuteNonQueryAsync();
+    }
+
+    var repository = new SqliteGamePreferenceRepository(path);
+    await repository.SetRatingAsync("control", 8);
+
+    var migrated = await repository.GetAsync("control");
+    Assert.NotNull(migrated);
+    Assert.True(migrated!.IsFavorite);
+    Assert.Equal<int?>(8, migrated.Rating);
 }
 
 static Task LibraryPresentationPolicyHandlesSearchAndFilters()
