@@ -1,11 +1,35 @@
 using System.Globalization;
-using System.Text;
 using GameLauncher.Core.Models;
+using Microsoft.VisualBasic.FileIO;
 
 namespace GameLauncher.Infrastructure.Sync;
 
 internal static class PersonalLibraryCsvParser
 {
+    private static readonly string[] TitleAliases =
+        ["title", "game", "gametitle", "gamename", "name"];
+
+    private static readonly string[] PlatformAliases =
+        ["platforms", "platform"];
+
+    private static readonly string[] SteamIdAliases =
+        ["steamappid", "steamid", "appid"];
+
+    private static readonly string[] CoverAliases =
+        ["coverurl", "cover", "imageurl", "artwork"];
+
+    private static readonly string[] RankAliases =
+        ["rank", "rankscore", "nextplayrank", "priority"];
+
+    private static readonly string[] StatusAliases =
+        ["status", "preference", "librarystatus"];
+
+    private static readonly string[] ProgressAliases =
+        ["progress", "progressstatus"];
+
+    private static readonly string[] RatingAliases =
+        ["rating", "score"];
+
     public static IReadOnlyList<PersonalLibraryGame> Parse(
         string csv)
     {
@@ -14,82 +38,96 @@ internal static class PersonalLibraryCsvParser
             return Array.Empty<PersonalLibraryGame>();
         }
 
-        var rows = ParseRows(csv);
-        if (rows.Count == 0)
+        using var textReader = new StringReader(csv);
+        using var parser = new TextFieldParser(textReader)
+        {
+            TextFieldType = FieldType.Delimited,
+            HasFieldsEnclosedInQuotes = true,
+            TrimWhiteSpace = true
+        };
+        parser.SetDelimiters(",");
+
+        if (parser.EndOfData)
         {
             return Array.Empty<PersonalLibraryGame>();
         }
 
-        var headers = BuildHeaderIndex(rows[0]);
-        var titleIndex = FindHeader(
-            headers,
-            "title",
-            "game",
-            "gametitle",
-            "gamename",
-            "name");
+        var headers = parser.ReadFields() ?? Array.Empty<string>();
+        var normalizedHeaders = headers
+            .Select(NormalizeHeader)
+            .ToArray();
 
-        if (!titleIndex.HasValue)
+        var titleIndex = FindIndex(
+            normalizedHeaders,
+            TitleAliases);
+
+        if (titleIndex < 0)
         {
             throw new InvalidOperationException(
                 "The sheet needs a Title or Game column.");
         }
 
-        var platformsIndex = FindHeader(
-            headers,
-            "platforms",
-            "platform");
-        var steamIndex = FindHeader(
-            headers,
-            "steamappid",
-            "steamid",
-            "appid");
-        var coverIndex = FindHeader(
-            headers,
-            "coverurl",
-            "cover",
-            "imageurl",
-            "artwork");
-        var rankIndex = FindHeader(
-            headers,
-            "rank",
-            "rankscore",
-            "nextplayrank",
-            "priority");
-        var statusIndex = FindHeader(
-            headers,
-            "status",
-            "preference",
-            "librarystatus");
-        var progressIndex = FindHeader(
-            headers,
-            "progress",
-            "progressstatus");
-        var ratingIndex = FindHeader(
-            headers,
-            "rating",
-            "score");
+        var platformIndex = FindIndex(
+            normalizedHeaders,
+            PlatformAliases);
+        var steamIdIndex = FindIndex(
+            normalizedHeaders,
+            SteamIdAliases);
+        var coverIndex = FindIndex(
+            normalizedHeaders,
+            CoverAliases);
+        var rankIndex = FindIndex(
+            normalizedHeaders,
+            RankAliases);
+        var statusIndex = FindIndex(
+            normalizedHeaders,
+            StatusAliases);
+        var progressIndex = FindIndex(
+            normalizedHeaders,
+            ProgressAliases);
+        var ratingIndex = FindIndex(
+            normalizedHeaders,
+            RatingAliases);
 
         var games = new List<PersonalLibraryGame>();
-        for (var rowIndex = 1; rowIndex < rows.Count; rowIndex++)
+        var sourceRow = 1;
+
+        while (!parser.EndOfData)
         {
-            var row = rows[rowIndex];
-            var title = Get(row, titleIndex);
+            sourceRow++;
+
+            string[]? fields;
+            try
+            {
+                fields = parser.ReadFields();
+            }
+            catch (MalformedLineException)
+            {
+                continue;
+            }
+
+            if (fields is null ||
+                titleIndex >= fields.Length)
+            {
+                continue;
+            }
+
+            var title = fields[titleIndex]?.Trim();
             if (string.IsNullOrWhiteSpace(title))
             {
                 continue;
             }
 
             games.Add(new PersonalLibraryGame(
-                rowIndex + 1,
-                title.Trim(),
-                Get(row, platformsIndex)?.Trim() ?? string.Empty,
-                ParseLong(Get(row, steamIndex)),
-                NullIfWhiteSpace(Get(row, coverIndex)),
-                ParseInt(Get(row, rankIndex)),
-                NormalizeStatus(Get(row, statusIndex)),
-                NormalizeStatus(Get(row, progressIndex)),
-                ClampRating(ParseInt(Get(row, ratingIndex)))));
+                sourceRow,
+                title,
+                Read(fields, platformIndex) ?? string.Empty,
+                ParseLong(Read(fields, steamIdIndex)),
+                NullIfWhiteSpace(Read(fields, coverIndex)),
+                ParseInt(Read(fields, rankIndex)),
+                NormalizeStatus(Read(fields, statusIndex)),
+                NormalizeStatus(Read(fields, progressIndex)),
+                ClampRating(ParseInt(Read(fields, ratingIndex)))));
         }
 
         return games
@@ -98,124 +136,19 @@ internal static class PersonalLibraryCsvParser
             .ToArray();
     }
 
-    private static IReadOnlyDictionary<string, int> BuildHeaderIndex(
-        IReadOnlyList<string> row) =>
-        row
-            .Select((value, index) => new
-            {
-                Key = NormalizeHeader(value),
-                Index = index
-            })
-            .Where(x => x.Key.Length > 0)
-            .GroupBy(x => x.Key)
-            .ToDictionary(
-                x => x.Key,
-                x => x.First().Index,
-                StringComparer.Ordinal);
-
-    private static IReadOnlyList<string[]> ParseRows(string csv)
+    private static int FindIndex(
+        IReadOnlyList<string> headers,
+        IReadOnlyCollection<string> aliases)
     {
-        var rows = new List<string[]>();
-        var row = new List<string>();
-        var field = new StringBuilder();
-        var quoted = false;
-
-        for (var index = 0; index < csv.Length; index++)
+        for (var index = 0; index < headers.Count; index++)
         {
-            var character = csv[index];
-
-            if (quoted)
-            {
-                if (character == '"')
-                {
-                    if (index + 1 < csv.Length &&
-                        csv[index + 1] == '"')
-                    {
-                        field.Append('"');
-                        index++;
-                    }
-                    else
-                    {
-                        quoted = false;
-                    }
-                }
-                else
-                {
-                    field.Append(character);
-                }
-
-                continue;
-            }
-
-            switch (character)
-            {
-                case '"':
-                    quoted = true;
-                    break;
-
-                case ',':
-                    CompleteField(row, field);
-                    break;
-
-                case '\r':
-                    if (index + 1 < csv.Length &&
-                        csv[index + 1] == '\n')
-                    {
-                        index++;
-                    }
-
-                    CompleteRow(rows, row, field);
-                    break;
-
-                case '\n':
-                    CompleteRow(rows, row, field);
-                    break;
-
-                default:
-                    field.Append(character);
-                    break;
-            }
-        }
-
-        if (field.Length > 0 || row.Count > 0)
-        {
-            CompleteRow(rows, row, field);
-        }
-
-        return rows;
-    }
-
-    private static void CompleteField(
-        ICollection<string> row,
-        StringBuilder field)
-    {
-        row.Add(field.ToString());
-        field.Clear();
-    }
-
-    private static void CompleteRow(
-        ICollection<string[]> rows,
-        List<string> row,
-        StringBuilder field)
-    {
-        CompleteField(row, field);
-        rows.Add(row.ToArray());
-        row.Clear();
-    }
-
-    private static int? FindHeader(
-        IReadOnlyDictionary<string, int> headers,
-        params string[] names)
-    {
-        foreach (var name in names)
-        {
-            if (headers.TryGetValue(name, out var index))
+            if (aliases.Contains(headers[index]))
             {
                 return index;
             }
         }
 
-        return null;
+        return -1;
     }
 
     private static string NormalizeHeader(string value) =>
@@ -225,13 +158,11 @@ internal static class PersonalLibraryCsvParser
             .Select(char.ToLowerInvariant)
             .ToArray());
 
-    private static string? Get(
+    private static string? Read(
         IReadOnlyList<string> row,
-        int? index) =>
-        index.HasValue &&
-        index.Value >= 0 &&
-        index.Value < row.Count
-            ? row[index.Value]
+        int index) =>
+        index >= 0 && index < row.Count
+            ? row[index]
             : null;
 
     private static int? ParseInt(string? value) =>
