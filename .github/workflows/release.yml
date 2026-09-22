@@ -56,6 +56,12 @@ jobs:
             "/DPublishDir=$pwd\publish" `
             ".\installer\GameLauncher.iss"
 
+      - name: Create installer checksum
+        shell: pwsh
+        run: |
+          $hash = (Get-FileHash .\artifacts\GameLauncher-Setup.exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  GameLauncher-Setup.exe" | Set-Content -Encoding ascii .\artifacts\GameLauncher-Setup.exe.sha256
+
       - name: Build portable ZIP
         shell: pwsh
         run: |
@@ -70,6 +76,7 @@ jobs:
         run: |
           gh release create "${{ github.ref_name }}" `
             ".\artifacts\GameLauncher-Setup.exe" `
+            ".\artifacts\GameLauncher-Setup.exe.sha256" `
             ".\artifacts\GameLauncher-Portable-win-x64.zip" `
             --title "My Game Launcher ${{ github.ref_name }}" `
             --generate-notes
