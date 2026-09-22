@@ -32,7 +32,7 @@
             </Grid.ColumnDefinitions>
 
             <Border Width="62" Height="62" CornerRadius="16" Background="{StaticResource SurfaceRaisedBrush}">
-                <Image Source="Assets/GameLauncher.png" Margin="8" Stretch="Uniform"/>
+                <Image Source="Assets/GameLauncher.ico" Margin="8" Stretch="Uniform"/>
             </Border>
 
             <StackPanel Grid.Column="2" VerticalAlignment="Center">
