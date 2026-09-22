@@ -1483,6 +1483,7 @@ static async Task GitHubUpdaterParsesLatestRelease()
     Assert.True(update.IsUpdateAvailable);
     Assert.Equal(new Version(1, 1, 0), update.LatestVersion);
     Assert.NotNull(update.InstallerDownload);
+    Assert.NotNull(update.ChecksumDownload);
     Assert.Equal("GameLauncher-Setup.exe", Path.GetFileName(update.InstallerDownload!.AbsolutePath));
 }
 
