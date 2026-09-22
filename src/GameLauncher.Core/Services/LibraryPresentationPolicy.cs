@@ -14,17 +14,22 @@ public static class LibraryPresentationPolicy
     {
         ArgumentNullException.ThrowIfNull(item);
 
-        var normalizedSearch = GameTitleNormalizer.Normalize(search ?? string.Empty);
+        var normalizedSearch = GameTitleNormalizer.Normalize(
+            search ?? string.Empty);
+
         if (!string.IsNullOrWhiteSpace(normalizedSearch))
         {
             var haystack = string.Join(
                 " ",
                 item.Game.Title,
-                string.Join(" ", item.Installations.Select(x => x.Source.ToString())),
+                string.Join(
+                    " ",
+                    item.Installations.Select(x => x.Source.ToString())),
                 personalLibrary?.Title ?? string.Empty,
                 personalLibrary?.Platforms ?? string.Empty);
 
-            if (!GameTitleNormalizer.Normalize(haystack)
+            if (!GameTitleNormalizer
+                    .Normalize(haystack)
                     .Contains(normalizedSearch, StringComparison.Ordinal))
             {
                 return false;
@@ -35,62 +40,26 @@ public static class LibraryPresentationPolicy
         {
             LibraryFilterMode.Favorites => isFavorite,
             LibraryFilterMode.NextUp =>
-                string.Equals(personalLibrary?.LibraryStatus, "next", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(personalLibrary?.ProgressStatus, "playing", StringComparison.OrdinalIgnoreCase) ||
+                IsStatus(personalLibrary?.LibraryStatus, "next") ||
+                IsStatus(personalLibrary?.ProgressStatus, "playing") ||
                 personalLibrary?.Rank is not null,
             LibraryFilterMode.Playing =>
-                string.Equals(personalLibrary?.ProgressStatus, "playing", StringComparison.OrdinalIgnoreCase),
+                IsStatus(personalLibrary?.ProgressStatus, "playing"),
             _ => true
         };
     }
 
-    public static int NextUpSortKey(PersonalLibraryGame? personalLibrary) =>
-        string.Equals(personalLibrary?.ProgressStatus, "playing", StringComparison.OrdinalIgnoreCase)
+    public static int NextUpSortKey(
+        PersonalLibraryGame? personalLibrary) =>
+        IsStatus(personalLibrary?.ProgressStatus, "playing")
             ? int.MinValue
             : personalLibrary?.Rank ?? int.MaxValue;
 
-    // Legacy overloads kept for compatibility with the existing regression suite
-    // and old cached Hatchable data. The application UI no longer uses Hatchable.
-    public static bool Matches(
-        GameLibraryItem item,
-        HatchableRemoteGame? hatchable,
-        bool isFavorite,
-        string? search,
-        LibraryFilterMode filter)
-    {
-        ArgumentNullException.ThrowIfNull(item);
-
-        var normalizedSearch = GameTitleNormalizer.Normalize(search ?? string.Empty);
-        if (!string.IsNullOrWhiteSpace(normalizedSearch))
-        {
-            var haystack = string.Join(
-                " ",
-                item.Game.Title,
-                string.Join(" ", item.Installations.Select(x => x.Source.ToString())),
-                hatchable?.Title ?? string.Empty,
-                hatchable?.Platforms ?? string.Empty);
-
-            if (!GameTitleNormalizer.Normalize(haystack)
-                    .Contains(normalizedSearch, StringComparison.Ordinal))
-            {
-                return false;
-            }
-        }
-
-        return filter switch
-        {
-            LibraryFilterMode.Favorites => isFavorite,
-            LibraryFilterMode.NextUp =>
-                string.Equals(hatchable?.LibraryStatus, "next", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(hatchable?.ProgressStatus, "playing", StringComparison.OrdinalIgnoreCase),
-            LibraryFilterMode.Playing =>
-                string.Equals(hatchable?.ProgressStatus, "playing", StringComparison.OrdinalIgnoreCase),
-            _ => true
-        };
-    }
-
-    public static int NextUpSortKey(HatchableRemoteGame? hatchable) =>
-        string.Equals(hatchable?.ProgressStatus, "playing", StringComparison.OrdinalIgnoreCase)
-            ? int.MinValue
-            : hatchable?.RankScore ?? int.MaxValue;
+    private static bool IsStatus(
+        string? actual,
+        string expected) =>
+        string.Equals(
+            actual,
+            expected,
+            StringComparison.OrdinalIgnoreCase);
 }

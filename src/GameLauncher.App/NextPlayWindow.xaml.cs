@@ -100,8 +100,8 @@ public partial class NextPlayWindow : Window
                 await _personalLibrary.SyncAsync();
             }
 
-            var remote = await _personalLibrary.GetCachedGamesAsync();
-            if (remote.Count == 0)
+            var personalGames = await _personalLibrary.GetCachedGamesAsync();
+            if (personalGames.Count == 0)
             {
                 StatusText.Text = "No personal-library data yet. Link a Google Sheet from Personal Library and refresh it.";
                 GamesGrid.ItemsSource = Array.Empty<NextPlayGameViewModel>();
@@ -111,7 +111,7 @@ public partial class NextPlayWindow : Window
             var local = await _library.GetLibraryAsync();
             var preferences = await _preferences.GetAllAsync();
 
-            _rows = remote
+            _rows = personalGames
                 .OrderBy(x => x.Rank ?? int.MaxValue)
                 .ThenBy(x => x.SourceRow)
                 .Select(r =>
@@ -122,7 +122,7 @@ public partial class NextPlayWindow : Window
 
                     return new NextPlayGameViewModel(
                         r,
-                        local.Any(l => PersonalLibraryService.FindMatch(l, new[] { r }) is not null),
+                        local.Any(l => PersonalLibraryMatcher.FindMatch(l, new[] { r }) is not null),
                         preference?.Rating);
                 })
                 .ToArray();

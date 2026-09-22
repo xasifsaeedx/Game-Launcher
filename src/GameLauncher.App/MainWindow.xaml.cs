@@ -404,20 +404,13 @@ public partial class MainWindow : Window
     private async Task RefreshLibraryAsync()
     {
         var items = await _library.GetLibraryAsync(_lifetime.Token);
-        var remote = await _personalLibrary.GetCachedGamesAsync(_lifetime.Token);
+        var personalGames = await _personalLibrary.GetCachedGamesAsync(_lifetime.Token);
         var preferences = await _preferences.GetAllAsync(_lifetime.Token);
 
-        _cards = items
-            .Select(item =>
-            {
-                var personal = PersonalLibraryService.FindMatch(item, remote);
-                preferences.TryGetValue(
-                    GamePreferenceService.GetGameKey(item.Game.Title),
-                    out var preference);
-
-                return new GameCardViewModel(item, personal, preference);
-            })
-            .ToArray();
+        _cards = GameCardViewModelFactory.Create(
+            items,
+            personalGames,
+            preferences);
 
         ApplyLibraryView();
 
@@ -431,7 +424,7 @@ public partial class MainWindow : Window
             $"{items.Count} game(s)  •  {installs} installation(s)  •  " +
             $"{GameCardViewModel.FormatPlaytime(totalSeconds)} tracked  •  " +
             $"{favoriteCount} favorite(s)  •  {ratedCount} rated" +
-            (remote.Count == 0 ? string.Empty : $"  •  {ranked} matched to Personal Library");
+            (personalGames.Count == 0 ? string.Empty : $"  •  {ranked} matched to Personal Library");
     }
 
     private sealed record FilterChoice(
