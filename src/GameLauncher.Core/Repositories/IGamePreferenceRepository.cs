@@ -15,4 +15,9 @@ public interface IGamePreferenceRepository
         string gameKey,
         bool isFavorite,
         CancellationToken cancellationToken = default);
+
+    Task SetRatingAsync(
+        string gameKey,
+        int? rating,
+        CancellationToken cancellationToken = default);
 }
