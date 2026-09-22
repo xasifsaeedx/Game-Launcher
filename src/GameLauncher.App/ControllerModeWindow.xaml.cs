@@ -146,8 +146,8 @@ public partial class ControllerModeWindow : Window
     private async Task RefreshAsync(Guid? preserveGameId = null)
     {
         var library = await _library.GetLibraryAsync(_lifetime.Token);
-        var remote = await _hatchable.GetCachedGamesAsync(_lifetime.Token);
-        var favorites = await _preferences.GetFavoriteKeysAsync(_lifetime.Token);
+        var remote = await _personalLibrary.GetCachedGamesAsync(_lifetime.Token);
+        var preferences = await _preferences.GetAllAsync(_lifetime.Token);
 
         _cards = library
             .Select(item =>
@@ -257,7 +257,7 @@ public partial class ControllerModeWindow : Window
             StatusText.Text =
                 $"{selected.Title} · {GameCardViewModel.FormatPlaytime(result.Session.DurationSeconds ?? 0)}" +
                 (result.GraphicsWarning is null ? string.Empty : $" · Graphics: {result.GraphicsWarning}") +
-                (result.LibraryWarning is null ? string.Empty : $" · Sync: {result.HatchableWarning}");
+                (result.LibraryWarning is null ? string.Empty : $" · Library: {result.LibraryWarning}");
         }
         catch (OperationCanceledException)
         {
