@@ -7,6 +7,52 @@ public static class LibraryPresentationPolicy
 {
     public static bool Matches(
         GameLibraryItem item,
+        PersonalLibraryGame? personalLibrary,
+        bool isFavorite,
+        string? search,
+        LibraryFilterMode filter)
+    {
+        ArgumentNullException.ThrowIfNull(item);
+
+        var normalizedSearch = GameTitleNormalizer.Normalize(search ?? string.Empty);
+        if (!string.IsNullOrWhiteSpace(normalizedSearch))
+        {
+            var haystack = string.Join(
+                " ",
+                item.Game.Title,
+                string.Join(" ", item.Installations.Select(x => x.Source.ToString())),
+                personalLibrary?.Title ?? string.Empty,
+                personalLibrary?.Platforms ?? string.Empty);
+
+            if (!GameTitleNormalizer.Normalize(haystack)
+                    .Contains(normalizedSearch, StringComparison.Ordinal))
+            {
+                return false;
+            }
+        }
+
+        return filter switch
+        {
+            LibraryFilterMode.Favorites => isFavorite,
+            LibraryFilterMode.NextUp =>
+                string.Equals(personalLibrary?.LibraryStatus, "next", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(personalLibrary?.ProgressStatus, "playing", StringComparison.OrdinalIgnoreCase) ||
+                personalLibrary?.Rank is not null,
+            LibraryFilterMode.Playing =>
+                string.Equals(personalLibrary?.ProgressStatus, "playing", StringComparison.OrdinalIgnoreCase),
+            _ => true
+        };
+    }
+
+    public static int NextUpSortKey(PersonalLibraryGame? personalLibrary) =>
+        string.Equals(personalLibrary?.ProgressStatus, "playing", StringComparison.OrdinalIgnoreCase)
+            ? int.MinValue
+            : personalLibrary?.Rank ?? int.MaxValue;
+
+    // Legacy overloads kept for compatibility with the existing regression suite
+    // and old cached Hatchable data. The application UI no longer uses Hatchable.
+    public static bool Matches(
+        GameLibraryItem item,
         HatchableRemoteGame? hatchable,
         bool isFavorite,
         string? search,
