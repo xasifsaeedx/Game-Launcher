@@ -1527,6 +1527,10 @@ static async Task GitHubUpdaterDownloadsInstaller()
             {
               "name": "GameLauncher-Setup.exe",
               "browser_download_url": "https://example.test/GameLauncher-Setup.exe"
+            },
+            {
+              "name": "GameLauncher-Setup.exe.sha256",
+              "browser_download_url": "https://example.test/GameLauncher-Setup.exe.sha256"
             }
           ]
         }
