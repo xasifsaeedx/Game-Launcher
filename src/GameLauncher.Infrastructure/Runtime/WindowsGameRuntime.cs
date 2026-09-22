@@ -199,6 +199,7 @@ public sealed class WindowsGameRuntime : IGameRuntime
 
                 if (!string.IsNullOrWhiteSpace(installation.ExecutablePath) &&
                     PathsEqual(path, installation.ExecutablePath) &&
+                    installation.Source != GameSource.Xbox &&
                     !IsHelperProcess(process))
                 {
                     keep = true;
