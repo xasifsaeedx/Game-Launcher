@@ -46,6 +46,22 @@ public sealed class GamePreferenceService
             isFavorite,
             cancellationToken);
 
+    public Task SetRatingAsync(
+        GameLibraryItem item,
+        int? rating,
+        CancellationToken cancellationToken = default)
+    {
+        if (rating is < 1 or > 10)
+        {
+            throw new ArgumentOutOfRangeException(nameof(rating), "Rating must be 1-10.");
+        }
+
+        return _repository.SetRatingAsync(
+            GetGameKey(item.Game.Title),
+            rating,
+            cancellationToken);
+    }
+
     public async Task<IReadOnlySet<string>> GetFavoriteKeysAsync(
         CancellationToken cancellationToken = default)
     {
@@ -54,5 +70,12 @@ public sealed class GamePreferenceService
             .Where(x => x.IsFavorite)
             .Select(x => x.GameKey)
             .ToHashSet(StringComparer.Ordinal);
+    }
+
+    public async Task<IReadOnlyDictionary<string, GamePreference>> GetAllAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var all = await _repository.GetAllAsync(cancellationToken);
+        return all.ToDictionary(x => x.GameKey, StringComparer.Ordinal);
     }
 }
