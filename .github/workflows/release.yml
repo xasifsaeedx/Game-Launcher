@@ -88,3 +88,4 @@ jobs:
             --title "My Game Launcher $env:RELEASE_TAG" `
             --target "${{ github.sha }}" `
             --generate-notes
+
