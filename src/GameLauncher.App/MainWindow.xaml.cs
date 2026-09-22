@@ -14,7 +14,7 @@ public partial class MainWindow : Window
     private readonly LauncherPlayService _play;
     private readonly LaunchProfileService _profiles;
     private readonly GameplayOverlayService _overlay;
-    private readonly HatchableSyncService _hatchable;
+    private readonly PersonalLibraryService _personalLibrary;
     private readonly GraphicsOptimizerService _graphics;
     private readonly GameHistoryService _history;
     private readonly GamePreferenceService _preferences;
@@ -38,7 +38,7 @@ public partial class MainWindow : Window
         LauncherPlayService play,
         LaunchProfileService profiles,
         GameplayOverlayService overlay,
-        HatchableSyncService hatchable,
+        PersonalLibraryService personalLibrary,
         GraphicsOptimizerService graphics,
         GameHistoryService history,
         GamePreferenceService preferences,
@@ -53,7 +53,7 @@ public partial class MainWindow : Window
         _play = play ?? throw new ArgumentNullException(nameof(play));
         _profiles = profiles ?? throw new ArgumentNullException(nameof(profiles));
         _overlay = overlay ?? throw new ArgumentNullException(nameof(overlay));
-        _hatchable = hatchable ?? throw new ArgumentNullException(nameof(hatchable));
+        _personalLibrary = personalLibrary ?? throw new ArgumentNullException(nameof(personalLibrary));
         _graphics = graphics ?? throw new ArgumentNullException(nameof(graphics));
         _history = history ?? throw new ArgumentNullException(nameof(history));
         _preferences = preferences ?? throw new ArgumentNullException(nameof(preferences));
@@ -79,7 +79,7 @@ public partial class MainWindow : Window
     {
         var window = new ControllerModeWindow(
             _library,
-            _hatchable,
+            _personalLibrary,
             _preferences,
             _play);
 
@@ -128,9 +128,9 @@ public partial class MainWindow : Window
         new OverlaySettingsWindow(_overlay) { Owner = this }.ShowDialog();
     }
 
-    private async void HatchableButton_Click(object sender, RoutedEventArgs e)
+    private async void PersonalLibraryButton_Click(object sender, RoutedEventArgs e)
     {
-        var window = new HatchableSyncWindow(_hatchable) { Owner = this };
+        var window = new PersonalLibraryWindow(_personalLibrary) { Owner = this };
         window.ShowDialog();
         if (window.Changed)
         {
@@ -140,7 +140,14 @@ public partial class MainWindow : Window
 
     private async void NextPlayButton_Click(object sender, RoutedEventArgs e)
     {
-        new NextPlayWindow(_hatchable, _library) { Owner = this }.ShowDialog();
+        new NextPlayWindow(
+            _personalLibrary,
+            _library,
+            _preferences)
+        {
+            Owner = this
+        }.ShowDialog();
+
         await RefreshLibraryAsync();
     }
 
@@ -164,7 +171,7 @@ public partial class MainWindow : Window
                 dialog.LaunchArguments,
                 _lifetime.Token);
 
-            await TryAutoHatchableSyncAsync();
+            await TryAutoPersonalLibrarySyncAsync();
             await RefreshLibraryAsync();
             StatusText.Text = $"Added {dialog.GameTitle}.";
         }
@@ -195,7 +202,7 @@ public partial class MainWindow : Window
             StatusText.Text =
                 $"{card.Title} session saved ({GameCardViewModel.FormatPlaytime(result.Session.DurationSeconds ?? 0)})." +
                 (result.GraphicsWarning is null ? string.Empty : $" Graphics: {result.GraphicsWarning}") +
-                (result.HatchableWarning is null ? string.Empty : $" Hatchable: {result.HatchableWarning}");
+                (result.LibraryWarning is null ? string.Empty : $" Library: {result.LibraryWarning}");
         }
         catch (OperationCanceledException)
         {
@@ -233,6 +240,36 @@ public partial class MainWindow : Window
         }
     }
 
+    private async void RateButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button button || button.Tag is not Guid gameId) return;
+        var card = _cards.FirstOrDefault(x => x.GameId == gameId);
+        if (card is null) return;
+
+        var dialog = new RateGameWindow(card.Title, card.Rating)
+        {
+            Owner = this
+        };
+
+        if (dialog.ShowDialog() != true) return;
+
+        try
+        {
+            await _preferences.SetRatingAsync(
+                card.Item,
+                dialog.Rating,
+                _lifetime.Token);
+            await RefreshLibraryAsync();
+            StatusText.Text = dialog.Rating.HasValue
+                ? $"Rated {card.Title} {dialog.Rating}/10."
+                : $"Cleared rating for {card.Title}.";
+        }
+        catch (Exception ex)
+        {
+            StatusText.Text = $"Could not update rating: {ex.Message}";
+        }
+    }
+
     private void ProfilesButton_Click(object sender, RoutedEventArgs e)
     {
         if (sender is not Button button || button.Tag is not Guid gameId) return;
@@ -260,7 +297,7 @@ public partial class MainWindow : Window
         var shown = _cards
             .Where(card => LibraryPresentationPolicy.Matches(
                 card.Item,
-                card.Hatchable,
+                card.PersonalLibrary,
                 card.IsFavorite,
                 search,
                 filter));
@@ -268,7 +305,7 @@ public partial class MainWindow : Window
         shown = filter == LibraryFilterMode.NextUp
             ? shown
                 .OrderBy(card =>
-                    LibraryPresentationPolicy.NextUpSortKey(card.Hatchable))
+                    LibraryPresentationPolicy.NextUpSortKey(card.PersonalLibrary))
                 .ThenBy(card => card.Title, StringComparer.OrdinalIgnoreCase)
             : shown.OrderBy(card => card.Title, StringComparer.OrdinalIgnoreCase);
 
@@ -291,7 +328,7 @@ public partial class MainWindow : Window
         {
             StatusText.Text = "Scanning installed game libraries...";
             var result = await _library.SyncSourcesAsync(_lifetime.Token);
-            var hatchableWarning = await TryAutoHatchableSyncAsync();
+            var libraryWarning = await TryAutoPersonalLibrarySyncAsync();
             var historyWarning = await TryAutoSteamHistorySyncAsync();
             await RefreshLibraryAsync();
 
@@ -300,9 +337,9 @@ public partial class MainWindow : Window
                 : $" {result.Warnings.Count} source/artwork warning(s).";
 
             StatusText.Text =
-                $"Library sync complete: {result.DiscoveredCount} installation(s), " +
+                $"Library refresh complete: {result.DiscoveredCount} installation(s), " +
                 $"{result.MetadataUpdatedCount} cover(s) added.{warningSuffix}" +
-                (hatchableWarning is null ? string.Empty : $" Hatchable: {hatchableWarning}") +
+                (libraryWarning is null ? string.Empty : $" Personal Library: {libraryWarning}") +
                 (historyWarning is null ? string.Empty : $" Steam history: {historyWarning}");
         }
         catch (OperationCanceledException)
@@ -342,16 +379,16 @@ public partial class MainWindow : Window
         }
     }
 
-    private async Task<string?> TryAutoHatchableSyncAsync()
+    private async Task<string?> TryAutoPersonalLibrarySyncAsync()
     {
         try
         {
-            if (!await _hatchable.IsAutoSyncEnabledAsync(_lifetime.Token))
+            if (!await _personalLibrary.IsAutoSyncEnabledAsync(_lifetime.Token))
             {
                 return null;
             }
 
-            await _hatchable.SyncAsync(_lifetime.Token);
+            await _personalLibrary.SyncAsync(_lifetime.Token);
             return null;
         }
         catch (OperationCanceledException)
@@ -367,16 +404,18 @@ public partial class MainWindow : Window
     private async Task RefreshLibraryAsync()
     {
         var items = await _library.GetLibraryAsync(_lifetime.Token);
-        var remote = await _hatchable.GetCachedGamesAsync(_lifetime.Token);
-        var favorites = await _preferences.GetFavoriteKeysAsync(_lifetime.Token);
+        var remote = await _personalLibrary.GetCachedGamesAsync(_lifetime.Token);
+        var preferences = await _preferences.GetAllAsync(_lifetime.Token);
 
         _cards = items
             .Select(item =>
             {
-                var hatchable = HatchableSyncService.FindMatch(item, remote);
-                var favorite = favorites.Contains(
-                    GamePreferenceService.GetGameKey(item.Game.Title));
-                return new GameCardViewModel(item, hatchable, favorite);
+                var personal = PersonalLibraryService.FindMatch(item, remote);
+                preferences.TryGetValue(
+                    GamePreferenceService.GetGameKey(item.Game.Title),
+                    out var preference);
+
+                return new GameCardViewModel(item, personal, preference);
             })
             .ToArray();
 
@@ -384,14 +423,15 @@ public partial class MainWindow : Window
 
         var totalSeconds = items.Sum(x => x.TotalPlaytimeSeconds);
         var installs = items.Sum(x => x.Installations.Count);
-        var ranked = _cards.Count(x => x.Hatchable is not null);
+        var ranked = _cards.Count(x => x.PersonalLibrary is not null);
         var favoriteCount = _cards.Count(x => x.IsFavorite);
+        var ratedCount = _cards.Count(x => x.Rating.HasValue);
 
         LibrarySummaryText.Text =
             $"{items.Count} game(s)  •  {installs} installation(s)  •  " +
             $"{GameCardViewModel.FormatPlaytime(totalSeconds)} tracked  •  " +
-            $"{favoriteCount} favorite(s)" +
-            (remote.Count == 0 ? string.Empty : $"  •  {ranked} matched to Next 100");
+            $"{favoriteCount} favorite(s)  •  {ratedCount} rated" +
+            (remote.Count == 0 ? string.Empty : $"  •  {ranked} matched to Personal Library");
     }
 
     private sealed record FilterChoice(

@@ -11,7 +11,7 @@ namespace GameLauncher.App;
 public partial class ControllerModeWindow : Window
 {
     private readonly GameLibraryService _library;
-    private readonly HatchableSyncService _hatchable;
+    private readonly PersonalLibraryService _personalLibrary;
     private readonly GamePreferenceService _preferences;
     private readonly LauncherPlayService _play;
     private readonly XInputGamepad _gamepad = new();
@@ -24,14 +24,14 @@ public partial class ControllerModeWindow : Window
 
     public ControllerModeWindow(
         GameLibraryService library,
-        HatchableSyncService hatchable,
+        PersonalLibraryService personalLibrary,
         GamePreferenceService preferences,
         LauncherPlayService play)
     {
         InitializeComponent();
 
         _library = library ?? throw new ArgumentNullException(nameof(library));
-        _hatchable = hatchable ?? throw new ArgumentNullException(nameof(hatchable));
+        _personalLibrary = personalLibrary ?? throw new ArgumentNullException(nameof(personalLibrary));
         _preferences = preferences ?? throw new ArgumentNullException(nameof(preferences));
         _play = play ?? throw new ArgumentNullException(nameof(play));
 
@@ -146,25 +146,26 @@ public partial class ControllerModeWindow : Window
     private async Task RefreshAsync(Guid? preserveGameId = null)
     {
         var library = await _library.GetLibraryAsync(_lifetime.Token);
-        var remote = await _hatchable.GetCachedGamesAsync(_lifetime.Token);
-        var favorites = await _preferences.GetFavoriteKeysAsync(_lifetime.Token);
+        var remote = await _personalLibrary.GetCachedGamesAsync(_lifetime.Token);
+        var preferences = await _preferences.GetAllAsync(_lifetime.Token);
 
         _cards = library
             .Select(item =>
             {
-                var hatchable = HatchableSyncService.FindMatch(item, remote);
-                var favorite = favorites.Contains(
-                    GamePreferenceService.GetGameKey(item.Game.Title));
-                return new GameCardViewModel(item, hatchable, favorite);
+                var personal = PersonalLibraryService.FindMatch(item, remote);
+                preferences.TryGetValue(
+                    GamePreferenceService.GetGameKey(item.Game.Title),
+                    out var preference);
+                return new GameCardViewModel(item, personal, preference);
             })
             .Where(card => LibraryPresentationPolicy.Matches(
                 card.Item,
-                card.Hatchable,
+                card.PersonalLibrary,
                 card.IsFavorite,
                 null,
                 _filter))
             .OrderBy(card => _filter == LibraryFilterMode.NextUp
-                ? LibraryPresentationPolicy.NextUpSortKey(card.Hatchable)
+                ? LibraryPresentationPolicy.NextUpSortKey(card.PersonalLibrary)
                 : 0)
             .ThenBy(card => card.Title, StringComparer.OrdinalIgnoreCase)
             .ToArray();
@@ -256,7 +257,7 @@ public partial class ControllerModeWindow : Window
             StatusText.Text =
                 $"{selected.Title} · {GameCardViewModel.FormatPlaytime(result.Session.DurationSeconds ?? 0)}" +
                 (result.GraphicsWarning is null ? string.Empty : $" · Graphics: {result.GraphicsWarning}") +
-                (result.HatchableWarning is null ? string.Empty : $" · Sync: {result.HatchableWarning}");
+                (result.LibraryWarning is null ? string.Empty : $" · Library: {result.LibraryWarning}");
         }
         catch (OperationCanceledException)
         {

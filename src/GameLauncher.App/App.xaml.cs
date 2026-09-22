@@ -32,11 +32,9 @@ public partial class App : Application
         var overlaySettingsRepository = new SqliteOverlaySettingsRepository(paths.DatabasePath);
         var graphicsRepository = new SqliteGraphicsOptimizerRepository(paths.DatabasePath);
         var preferencesRepository = new SqliteGamePreferenceRepository(paths.DatabasePath);
+        var personalLibraryRepository = new SqlitePersonalLibraryRepository(paths.DatabasePath);
 
         var secretProtector = new DpapiSecretProtector();
-        var hatchableRepository = new SqliteHatchableSyncRepository(
-            paths.DatabasePath,
-            secretProtector);
         var historyRepository = new SqliteGameHistoryRepository(paths.DatabasePath);
         var steamHistorySettings = new SqliteSteamHistorySettingsRepository(
             paths.DatabasePath,
@@ -75,9 +73,9 @@ public partial class App : Application
             sessions,
             new WindowsExternalProgramRuntime());
 
-        var hatchable = new HatchableSyncService(
-            hatchableRepository,
-            new HatchableApiClient(),
+        var personalLibrary = new PersonalLibraryService(
+            personalLibraryRepository,
+            new GoogleSheetsPersonalLibraryClient(),
             library);
 
         var history = new GameHistoryService(
@@ -95,12 +93,12 @@ public partial class App : Application
         var play = new LauncherPlayService(
             smartLaunch,
             graphics,
-            hatchable);
+            personalLibrary);
         var stats = new LauncherStatsService(
             library,
             history,
             preferences,
-            hatchable);
+            personalLibrary);
 
         var backup = new LauncherBackupService();
         var updates = new GitHubReleaseUpdateService();
@@ -110,7 +108,7 @@ public partial class App : Application
             play,
             profiles,
             overlay,
-            hatchable,
+            personalLibrary,
             graphics,
             history,
             preferences,

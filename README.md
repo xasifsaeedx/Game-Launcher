@@ -2,7 +2,7 @@
 
 A lightweight, open-source Windows launcher focused on a unified local PC library, game-session tracking, controller use, and personal gaming history.
 
-**Current release target: v1.0.0 — Phase 8 Final Product.**
+**Current release target: v1.1.0.**
 
 ## Core features
 
@@ -13,7 +13,8 @@ A lightweight, open-source Windows launcher focused on a unified local PC librar
 - Launches games and tracks local play sessions/playtime.
 - Per-game smart launch profiles with pre-launch, companion, and post-game programs.
 - Gameplay-only RTSS overlay for FPS, GPU usage, and GPU temperature.
-- Hatchable synchronization for Next 100 ranking, progress, rating, playtime, and last-played state.
+- Personal Game Library integration from a linked Google Sheet, including Next Play rank/status metadata.
+- Persistent local 1–10 game ratings, independent of the linked Sheet.
 - Hardware-aware Graphics Optimizer with safe preview/backup/apply/restore on verified configurations.
 - Gaming History import from Steam API, PlayStation Data Access Excel, and flexible CSV/JSON account exports.
 - Favorites, search, and All / Favorites / Next Up / Playing library filters.
@@ -78,7 +79,13 @@ Desktop filters:
 - Next Up
 - Playing
 
-Search matches game title, store/source, and synced platform metadata.
+Search matches game title, store/source, and Personal Library platform metadata.
+
+## Personal Game Library
+
+Use **Personal Library** to link a Google Sheet containing your broader game collection. The launcher reads a CSV export from a link-accessible or published Sheet and caches it locally.
+
+Recommended columns are `Title`, `Platform`, `Steam App ID`, `Rank`, `Status`, `Progress`, and `Rating`. Rank/status/progress remain Sheet-owned; ratings set in the launcher are stored locally and take precedence in the launcher UI.
 
 ## Gaming History
 
@@ -153,10 +160,11 @@ The release workflow:
 - Phase 2: Unified Library — complete
 - Phase 3: Smart Launching — complete
 - Phase 4: Gameplay Overlay — complete
-- Phase 5: Hatchable Sync — complete
+- Phase 5: Hatchable Sync — superseded in v1.1 by Personal Game Library
 - Phase 6: Graphics Optimizer — complete
 - Phase 7: History + Console Accounts — complete
 - **Phase 8: Final Product — complete**
+- v1.1: UI/branding polish, overlay fixes, Personal Game Library, local ratings
 
 See `PHASE8_NOTES.md` for implementation and safety boundaries.
 

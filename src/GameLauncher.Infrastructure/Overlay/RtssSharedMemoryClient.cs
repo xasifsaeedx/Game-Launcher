@@ -7,7 +7,9 @@ internal sealed class RtssSharedMemoryClient : IDisposable
 {
     private const string MappingName = "RTSSSharedMemoryV2";
     private const uint Signature = 0x52545353;
-    private const string Owner = "GameLauncher.Phase4";
+    private const string Owner = "GameLauncher";
+    private const uint ExtendedOsdEntrySize = 4608;
+    private const uint VersionWithForegroundProcessId = 0x00020010;
 
     private readonly MemoryMappedFile _mapping;
     private readonly MemoryMappedViewAccessor _view;
@@ -60,27 +62,37 @@ internal sealed class RtssSharedMemoryClient : IDisposable
 
         if (appEntrySize < 284 || appArraySize == 0) return null;
 
-        for (var index = 0u; index < appArraySize; index++)
+        var direct = ReadFramesPerSecondForPid(
+            (uint)processId,
+            appEntrySize,
+            appArrayOffset,
+            appArraySize);
+
+        if (direct.Found)
         {
-            var offset = appArrayOffset + (long)index * appEntrySize;
-            if (_view.ReadUInt32(offset) != (uint)processId) continue;
+            return direct.FramesPerSecond;
+        }
 
-            var time0 = _view.ReadUInt32(offset + 268);
-            var time1 = _view.ReadUInt32(offset + 272);
-            var frames = _view.ReadUInt32(offset + 276);
-            var frameTimeMicroseconds = _view.ReadUInt32(offset + 280);
-
-            if (frameTimeMicroseconds > 0)
+        // Some launchers hand off rendering to a child process. RTSS publishes the
+        // most recent foreground 3D application's PID in v2.16+ shared memory, so
+        // use it only when the tracked PID has no RTSS application entry at all.
+        var version = _view.ReadUInt32(4);
+        if (version >= VersionWithForegroundProcessId)
+        {
+            var foregroundPid = _view.ReadUInt32(68);
+            if (foregroundPid != 0 && foregroundPid != (uint)processId)
             {
-                return 1_000_000d / frameTimeMicroseconds;
-            }
+                var foreground = ReadFramesPerSecondForPid(
+                    foregroundPid,
+                    appEntrySize,
+                    appArrayOffset,
+                    appArraySize);
 
-            if (time1 > time0 && frames > 0)
-            {
-                return 1000d * frames / (time1 - time0);
+                if (foreground.Found)
+                {
+                    return foreground.FramesPerSecond;
+                }
             }
-
-            return null;
         }
 
         return null;
@@ -98,14 +110,21 @@ internal sealed class RtssSharedMemoryClient : IDisposable
         if (!slot.HasValue) return false;
 
         var offset = arrayOffset + (long)slot.Value * entrySize;
-        WriteString(offset, 256, text);
-        WriteString(offset + 256, 256, Owner);
 
-        if (entrySize >= 4608)
+        // RTSS OSD entries expose either the legacy 256-byte text field or,
+        // in newer layouts, a 4096-byte extended field. Writing the same text
+        // into both causes duplicate telemetry lines in some RTSS versions.
+        if (entrySize >= ExtendedOsdEntrySize)
         {
+            WriteString(offset, 256, string.Empty);
             WriteString(offset + 512, 4096, text);
         }
+        else
+        {
+            WriteString(offset, 256, text);
+        }
 
+        WriteString(offset + 256, 256, Owner);
         _view.Write(32, _view.ReadUInt32(32) + 1);
         return true;
     }
@@ -127,7 +146,7 @@ internal sealed class RtssSharedMemoryClient : IDisposable
 
             WriteString(offset, 256, string.Empty);
             WriteString(offset + 256, 256, string.Empty);
-            if (entrySize >= 4608)
+            if (entrySize >= ExtendedOsdEntrySize)
             {
                 WriteString(offset + 512, 4096, string.Empty);
             }
@@ -149,6 +168,38 @@ internal sealed class RtssSharedMemoryClient : IDisposable
         ClearOverlay();
         _view.Dispose();
         _mapping.Dispose();
+    }
+
+    private (bool Found, double? FramesPerSecond) ReadFramesPerSecondForPid(
+        uint processId,
+        uint appEntrySize,
+        uint appArrayOffset,
+        uint appArraySize)
+    {
+        for (var index = 0u; index < appArraySize; index++)
+        {
+            var offset = appArrayOffset + (long)index * appEntrySize;
+            if (_view.ReadUInt32(offset) != processId) continue;
+
+            var time0 = _view.ReadUInt32(offset + 268);
+            var time1 = _view.ReadUInt32(offset + 272);
+            var frames = _view.ReadUInt32(offset + 276);
+            var frameTimeMicroseconds = _view.ReadUInt32(offset + 280);
+
+            if (frameTimeMicroseconds > 0)
+            {
+                return (true, 1_000_000d / frameTimeMicroseconds);
+            }
+
+            if (time1 > time0 && frames > 0)
+            {
+                return (true, 1000d * frames / (time1 - time0));
+            }
+
+            return (true, null);
+        }
+
+        return (false, null);
     }
 
     private int? FindOrClaimSlot(uint entrySize, uint arrayOffset, uint arraySize)

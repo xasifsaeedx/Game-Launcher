@@ -1,35 +1,26 @@
 using System.Windows;
 using System.Windows.Controls;
-using GameLauncher.Core.Models;
 using GameLauncher.Core.Services;
 
 namespace GameLauncher.App;
 
 public partial class NextPlayWindow : Window
 {
-    private readonly HatchableSyncService _sync;
+    private readonly PersonalLibraryService _personalLibrary;
     private readonly GameLibraryService _library;
-    private readonly Choice<string?>[] _progressChoices;
+    private readonly GamePreferenceService _preferences;
     private readonly Choice<int?>[] _ratingChoices;
     private IReadOnlyList<NextPlayGameViewModel> _rows = Array.Empty<NextPlayGameViewModel>();
 
     public NextPlayWindow(
-        HatchableSyncService sync,
-        GameLibraryService library)
+        PersonalLibraryService personalLibrary,
+        GameLibraryService library,
+        GamePreferenceService preferences)
     {
         InitializeComponent();
-        _sync = sync ?? throw new ArgumentNullException(nameof(sync));
+        _personalLibrary = personalLibrary ?? throw new ArgumentNullException(nameof(personalLibrary));
         _library = library ?? throw new ArgumentNullException(nameof(library));
-
-        _progressChoices =
-        [
-            new(null, "Not started"),
-            new("playing", "Playing"),
-            new("completed", "Completed"),
-            new("paused", "Paused"),
-            new("dropped", "Dropped")
-        ];
-        ProgressComboBox.ItemsSource = _progressChoices;
+        _preferences = preferences ?? throw new ArgumentNullException(nameof(preferences));
 
         var ratings = new List<Choice<int?>> { new(null, "Not rated") };
         ratings.AddRange(
@@ -58,47 +49,38 @@ public partial class NextPlayWindow : Window
         if (GamesGrid.SelectedItem is not NextPlayGameViewModel selected)
         {
             SelectedTitleText.Text = string.Empty;
+            RatingComboBox.SelectedIndex = 0;
+            SelectionStatusText.Text = string.Empty;
             return;
         }
 
-        SelectedTitleText.Text = $"#{selected.Rank}  {selected.Title}";
-        ProgressComboBox.SelectedItem =
-            _progressChoices.First(x =>
-                string.Equals(
-                    x.Value,
-                    selected.Remote.ProgressStatus,
-                    StringComparison.OrdinalIgnoreCase));
+        SelectedTitleText.Text = selected.Rank.HasValue
+            ? $"#{selected.Rank}  {selected.Title}"
+            : selected.Title;
 
         RatingComboBox.SelectedItem =
-            _ratingChoices.First(x => x.Value == selected.Remote.Rating);
+            _ratingChoices.First(x => x.Value == selected.EffectiveRating);
 
         SelectionStatusText.Text =
-            $"{selected.LibraryStatus} · {selected.Playtime}" +
+            $"{selected.LibraryStatus} · {selected.Progress}" +
             (selected.IsInstalled ? " · Installed locally" : string.Empty);
     }
 
-    private async void SaveProgress_Click(object sender, RoutedEventArgs e)
+    private async void SaveRating_Click(object sender, RoutedEventArgs e)
     {
         if (GamesGrid.SelectedItem is not NextPlayGameViewModel selected) return;
 
         try
         {
-            SelectionStatusText.Text = "Saving...";
-
-            var progress = ProgressComboBox.SelectedItem is Choice<string?> progressChoice
-                ? progressChoice.Value
-                : null;
-            var rating = RatingComboBox.SelectedItem is Choice<int?> ratingChoice
-                ? ratingChoice.Value
+            var rating = RatingComboBox.SelectedItem is Choice<int?> choice
+                ? choice.Value
                 : null;
 
-            await _sync.UpdateRemoteStateAsync(
-                selected.RemoteGameId,
-                progress,
-                rating);
-
-            await ReloadAsync(syncFirst: false, selected.RemoteGameId);
-            SelectionStatusText.Text = "Saved to Hatchable.";
+            await _preferences.SetRatingAsync(selected.Title, rating);
+            await ReloadAsync(syncFirst: false, selected.SourceRow);
+            SelectionStatusText.Text = rating.HasValue
+                ? $"Saved {rating}/10 locally."
+                : "Local rating cleared.";
         }
         catch (Exception ex)
         {
@@ -108,41 +90,50 @@ public partial class NextPlayWindow : Window
 
     private async Task ReloadAsync(
         bool syncFirst,
-        int? selectRemoteGameId = null)
+        int? selectSourceRow = null)
     {
         try
         {
             if (syncFirst)
             {
-                StatusText.Text = "Syncing with Hatchable...";
-                await _sync.SyncAsync();
+                StatusText.Text = "Refreshing Google Sheets...";
+                await _personalLibrary.SyncAsync();
             }
 
-            var remote = await _sync.GetCachedGamesAsync();
+            var remote = await _personalLibrary.GetCachedGamesAsync();
             if (remote.Count == 0)
             {
-                StatusText.Text = "No cached ranking yet. Connect Hatchable Sync and run Sync now.";
+                StatusText.Text = "No personal-library data yet. Link a Google Sheet from Personal Library and refresh it.";
                 GamesGrid.ItemsSource = Array.Empty<NextPlayGameViewModel>();
                 return;
             }
 
             var local = await _library.GetLibraryAsync();
+            var preferences = await _preferences.GetAllAsync();
+
             _rows = remote
-                .OrderBy(x => x.RankScore)
-                .Select(r => new NextPlayGameViewModel(
-                    r,
-                    local.Any(l => HatchableSyncService.FindMatch(
-                        l,
-                        new[] { r }) is not null)))
+                .OrderBy(x => x.Rank ?? int.MaxValue)
+                .ThenBy(x => x.SourceRow)
+                .Select(r =>
+                {
+                    preferences.TryGetValue(
+                        GamePreferenceService.GetGameKey(r.Title),
+                        out var preference);
+
+                    return new NextPlayGameViewModel(
+                        r,
+                        local.Any(l => PersonalLibraryService.FindMatch(l, new[] { r }) is not null),
+                        preference?.Rating);
+                })
                 .ToArray();
 
             GamesGrid.ItemsSource = _rows;
-            GamesGrid.SelectedItem = selectRemoteGameId.HasValue
-                ? _rows.FirstOrDefault(x => x.RemoteGameId == selectRemoteGameId.Value)
+            GamesGrid.SelectedItem = selectSourceRow.HasValue
+                ? _rows.FirstOrDefault(x => x.SourceRow == selectSourceRow.Value)
                 : _rows.FirstOrDefault();
 
             StatusText.Text =
-                $"{_rows.Count} ranked game(s) · {_rows.Count(x => x.IsInstalled)} installed locally";
+                $"{_rows.Count} game(s) from Google Sheets · {_rows.Count(x => x.IsInstalled)} installed locally";
         }
         catch (Exception ex)
         {
