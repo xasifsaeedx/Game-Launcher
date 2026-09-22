@@ -22,8 +22,7 @@ public sealed class WindowsGameRuntime : IGameRuntime
 
         var directProcess = StartInstallation(installation);
         if (directProcess is not null &&
-            !IsHelperProcess(directProcess) &&
-            IsUsableDirectProcess(directProcess, installation))
+            ShouldTrackDirectProcess(directProcess, installation))
         {
             var directPath = TryGetProcessPath(directProcess) ?? installation.ExecutablePath;
             return new WindowsGameRunHandle(directProcess, startedUtc, directPath);
@@ -96,6 +95,14 @@ public sealed class WindowsGameRuntime : IGameRuntime
         };
 
         return Process.Start(startInfo);
+    }
+
+    private static bool ShouldTrackDirectProcess(
+        Process process,
+        GameInstallation installation)
+    {
+        if (installation.Source == GameSource.Xbox) return false;
+        return !IsHelperProcess(process) && IsUsableDirectProcess(process, installation);
     }
 
     private static bool IsHelperProcess(Process process)
