@@ -28,7 +28,7 @@ jobs:
       - name: Restore
         run: dotnet restore .\GameLauncher.sln
 
-      - name: Run tests
+      - name: Launcher tests
         run: dotnet run --project .\tests\GameLauncher.Tests\GameLauncher.Tests.csproj -c Release
 
       - name: Publish self-contained Windows app

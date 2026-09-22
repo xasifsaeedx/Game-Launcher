@@ -146,18 +146,13 @@ public partial class ControllerModeWindow : Window
     private async Task RefreshAsync(Guid? preserveGameId = null)
     {
         var library = await _library.GetLibraryAsync(_lifetime.Token);
-        var remote = await _personalLibrary.GetCachedGamesAsync(_lifetime.Token);
+        var personalGames = await _personalLibrary.GetCachedGamesAsync(_lifetime.Token);
         var preferences = await _preferences.GetAllAsync(_lifetime.Token);
 
-        _cards = library
-            .Select(item =>
-            {
-                var personal = PersonalLibraryService.FindMatch(item, remote);
-                preferences.TryGetValue(
-                    GamePreferenceService.GetGameKey(item.Game.Title),
-                    out var preference);
-                return new GameCardViewModel(item, personal, preference);
-            })
+        _cards = GameCardViewModelFactory.Create(
+                library,
+                personalGames,
+                preferences)
             .Where(card => LibraryPresentationPolicy.Matches(
                 card.Item,
                 card.PersonalLibrary,

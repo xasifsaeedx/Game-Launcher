@@ -1,7 +1,6 @@
 using GameLauncher.Core.Models;
 using GameLauncher.Core.Repositories;
 using GameLauncher.Core.Sync;
-using GameLauncher.Core.Utilities;
 
 namespace GameLauncher.Core.Services;
 
@@ -31,9 +30,9 @@ public sealed class PersonalLibraryService
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(settings);
-        settings = settings.Normalize();
 
-        if (!settings.IsConfigured)
+        var normalized = settings.Normalize();
+        if (!normalized.IsConfigured)
         {
             throw new ArgumentException(
                 "Enter a valid Google Sheets URL from docs.google.com.",
@@ -42,10 +41,14 @@ public sealed class PersonalLibraryService
 
         if (validateConnection)
         {
-            _ = await _client.GetGamesAsync(settings, cancellationToken);
+            _ = await _client.GetGamesAsync(
+                normalized,
+                cancellationToken);
         }
 
-        await _repository.SaveSettingsAsync(settings, cancellationToken);
+        await _repository.SaveSettingsAsync(
+            normalized,
+            cancellationToken);
     }
 
     public async Task DisconnectAsync(
@@ -67,51 +70,42 @@ public sealed class PersonalLibraryService
     public async Task<PersonalLibrarySyncResult> SyncAsync(
         CancellationToken cancellationToken = default)
     {
-        var settings = (await _repository.GetSettingsAsync(cancellationToken))?.Normalize()
-            ?? throw new InvalidOperationException("Personal Game Library is not connected.");
+        var settings = await GetConfiguredSettingsAsync(cancellationToken);
+        var personalGames = await _client.GetGamesAsync(
+            settings,
+            cancellationToken);
 
-        if (!settings.IsConfigured)
-        {
-            throw new InvalidOperationException("Personal Game Library is not connected.");
-        }
+        await _repository.ReplaceGamesAsync(
+            personalGames,
+            cancellationToken);
 
-        var remote = await _client.GetGamesAsync(settings, cancellationToken);
-        await _repository.ReplaceGamesAsync(remote, cancellationToken);
+        var localGames = await _library.GetLibraryAsync(cancellationToken);
+        var matchedCount = localGames.Count(localGame =>
+            PersonalLibraryMatcher.FindMatch(
+                localGame,
+                personalGames) is not null);
 
-        var local = await _library.GetLibraryAsync(cancellationToken);
-        var matched = local.Count(item => FindMatch(item, remote) is not null);
-
-        return new PersonalLibrarySyncResult(remote.Count, matched);
+        return new PersonalLibrarySyncResult(
+            personalGames.Count,
+            matchedCount);
     }
 
     public Task<IReadOnlyList<PersonalLibraryGame>> GetCachedGamesAsync(
         CancellationToken cancellationToken = default) =>
         _repository.GetGamesAsync(cancellationToken);
 
-    public static PersonalLibraryGame? FindMatch(
-        GameLibraryItem local,
-        IReadOnlyList<PersonalLibraryGame> remoteGames)
+    private async Task<PersonalLibrarySettings> GetConfiguredSettingsAsync(
+        CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(local);
-        ArgumentNullException.ThrowIfNull(remoteGames);
+        var settings = (await _repository.GetSettingsAsync(cancellationToken))
+            ?.Normalize();
 
-        var steamIds = local.Installations
-            .Where(x => x.Source == GameSource.Steam)
-            .Select(x => x.ExternalId)
-            .Where(x => !string.IsNullOrWhiteSpace(x))
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (settings is not { IsConfigured: true })
+        {
+            throw new InvalidOperationException(
+                "Personal Game Library is not connected.");
+        }
 
-        var steamMatch = remoteGames.FirstOrDefault(remote =>
-            remote.SteamAppId.HasValue &&
-            steamIds.Contains(remote.SteamAppId.Value.ToString()));
-
-        if (steamMatch is not null) return steamMatch;
-
-        var normalized = GameTitleNormalizer.Normalize(local.Game.Title);
-        return remoteGames.FirstOrDefault(remote =>
-            string.Equals(
-                GameTitleNormalizer.Normalize(remote.Title),
-                normalized,
-                StringComparison.Ordinal));
+        return settings;
     }
 }
