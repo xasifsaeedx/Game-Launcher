@@ -1399,7 +1399,11 @@ static async Task LauncherBackupCreatesUsableZip()
     var paths = new AppPaths(temp.Path);
     paths.EnsureCreated();
 
-    await File.WriteAllTextAsync(paths.DatabasePath, "database-bytes");
+    var repository = new SqliteGameRepository(paths.DatabasePath);
+    var now = DateTimeOffset.UtcNow;
+    await repository.UpsertGameAsync(
+        new Game(Guid.NewGuid(), "Backup Test", now, now));
+
     var cover = Path.Combine(paths.CoversDirectory, "cover.txt");
     await File.WriteAllTextAsync(cover, "cover-bytes");
 
