@@ -1,0 +1,70 @@
+<Window x:Class="GameLauncher.App.PersonalLibraryWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Personal Game Library"
+        Width="700"
+        Height="520"
+        ResizeMode="NoResize"
+        WindowStartupLocation="CenterOwner"
+        Background="#0D1117"
+        Foreground="#F7F9FC">
+    <Grid Margin="26">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="18"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="14"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <StackPanel>
+            <TextBlock Text="PERSONAL GAME LIBRARY" FontSize="11" FontWeight="Bold" Foreground="{StaticResource AccentBrush}"/>
+            <TextBlock Text="Link your Google Sheets library" Margin="0,4,0,0" FontSize="28" FontWeight="SemiBold"/>
+            <TextBlock Text="The launcher reads your game list and Next Play ranking from the sheet. Ratings you set in the launcher remain local."
+                       Margin="0,6,0,0" Foreground="{StaticResource MutedTextBrush}" TextWrapping="Wrap"/>
+        </StackPanel>
+
+        <Border Grid.Row="2" Background="{StaticResource SurfaceBrush}" CornerRadius="12" Padding="18">
+            <StackPanel>
+                <TextBlock Text="Google Sheets link" FontWeight="SemiBold" Margin="0,0,0,6"/>
+                <TextBox x:Name="SheetUrlTextBox" Padding="10"/>
+                <CheckBox x:Name="AutoSyncCheckBox"
+                          Content="Automatically refresh this library when the launcher starts"
+                          Margin="0,14,0,0"/>
+                <TextBlock Margin="0,10,0,0"
+                           FontSize="11"
+                           Foreground="{StaticResource MutedTextBrush}"
+                           TextWrapping="Wrap"
+                           Text="The sheet must be accessible through its link (Viewer access or published to the web). Recommended columns: Title, Platform, Steam App ID, Rank, Status, Progress, Rating."/>
+            </StackPanel>
+        </Border>
+
+        <Border Grid.Row="4" Background="{StaticResource SurfaceBrush}" CornerRadius="12" Padding="18">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <StackPanel>
+                    <TextBlock Text="Connection" FontWeight="SemiBold"/>
+                    <TextBlock x:Name="ConnectionText" Margin="0,5,0,0" Foreground="{StaticResource MutedTextBrush}" Text="Not connected."/>
+                </StackPanel>
+                <Button Grid.Column="1" Content="Open sheet" Click="OpenSheet_Click"/>
+            </Grid>
+        </Border>
+
+        <TextBlock x:Name="StatusText"
+                   Grid.Row="5"
+                   Margin="0,14,0,0"
+                   Foreground="{StaticResource MutedTextBrush}"
+                   TextWrapping="Wrap"/>
+
+        <StackPanel Grid.Row="6" Orientation="Horizontal" HorizontalAlignment="Right">
+            <Button Content="Disconnect" Margin="0,0,8,0" Click="Disconnect_Click"/>
+            <Button Content="Sync now" Margin="0,0,8,0" Click="SyncNow_Click"/>
+            <Button Content="Save" Style="{StaticResource PrimaryButtonStyle}" Click="Save_Click"/>
+        </StackPanel>
+    </Grid>
+</Window>
