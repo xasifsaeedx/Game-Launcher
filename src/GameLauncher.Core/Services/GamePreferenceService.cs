@@ -49,6 +49,12 @@ public sealed class GamePreferenceService
     public Task SetRatingAsync(
         GameLibraryItem item,
         int? rating,
+        CancellationToken cancellationToken = default) =>
+        SetRatingAsync(item.Game.Title, rating, cancellationToken);
+
+    public Task SetRatingAsync(
+        string title,
+        int? rating,
         CancellationToken cancellationToken = default)
     {
         if (rating is < 1 or > 10)
@@ -57,7 +63,7 @@ public sealed class GamePreferenceService
         }
 
         return _repository.SetRatingAsync(
-            GetGameKey(item.Game.Title),
+            GetGameKey(title),
             rating,
             cancellationToken);
     }
