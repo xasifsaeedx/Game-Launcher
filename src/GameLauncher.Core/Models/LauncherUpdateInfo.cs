@@ -6,4 +6,5 @@ public sealed record LauncherUpdateInfo(
     string ReleaseName,
     Uri ReleasePage,
     Uri? InstallerDownload,
+    Uri? ChecksumDownload,
     bool IsUpdateAvailable);

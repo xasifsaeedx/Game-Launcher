@@ -1,4 +1,5 @@
 using System.Net;
+using System.Security.Cryptography;
 using System.Net.Http;
 using System.IO.Compression;
 using System.Text;
@@ -1464,6 +1465,10 @@ static async Task GitHubUpdaterParsesLatestRelease()
             {
               "name": "GameLauncher-Setup.exe",
               "browser_download_url": "https://example.test/GameLauncher-Setup.exe"
+            },
+            {
+              "name": "GameLauncher-Setup.exe.sha256",
+              "browser_download_url": "https://example.test/GameLauncher-Setup.exe.sha256"
             }
           ]
         }
@@ -1478,6 +1483,7 @@ static async Task GitHubUpdaterParsesLatestRelease()
     Assert.True(update.IsUpdateAvailable);
     Assert.Equal(new Version(1, 1, 0), update.LatestVersion);
     Assert.NotNull(update.InstallerDownload);
+    Assert.NotNull(update.ChecksumDownload);
     Assert.Equal("GameLauncher-Setup.exe", Path.GetFileName(update.InstallerDownload!.AbsolutePath));
 }
 
@@ -1522,14 +1528,21 @@ static async Task GitHubUpdaterDownloadsInstaller()
             {
               "name": "GameLauncher-Setup.exe",
               "browser_download_url": "https://example.test/GameLauncher-Setup.exe"
+            },
+            {
+              "name": "GameLauncher-Setup.exe.sha256",
+              "browser_download_url": "https://example.test/GameLauncher-Setup.exe.sha256"
             }
           ]
         }
         """;
 
     byte[] installer = [10, 20, 30, 40, 50];
+    var checksum = Encoding.ASCII.GetBytes(
+        Convert.ToHexString(SHA256.HashData(installer)).ToLowerInvariant() +
+        "  GameLauncher-Setup.exe\n");
     using var http = new HttpClient(
-        new RoutingHttpHandler(Encoding.UTF8.GetBytes(json), installer));
+        new RoutingHttpHandler(Encoding.UTF8.GetBytes(json), installer, checksum));
     var service = new GitHubReleaseUpdateService(http);
     var update = await service.CheckAsync(new Version(1, 0, 0));
 
@@ -2050,29 +2063,37 @@ file sealed class RoutingHttpHandler : HttpMessageHandler
 {
     private readonly byte[] _releaseJson;
     private readonly byte[] _installer;
+    private readonly byte[] _checksum;
 
     public RoutingHttpHandler(
         byte[] releaseJson,
-        byte[] installer)
+        byte[] installer,
+        byte[]? checksum = null)
     {
         _releaseJson = releaseJson;
         _installer = installer;
+        _checksum = checksum ?? Array.Empty<byte>();
     }
 
     protected override Task<HttpResponseMessage> SendAsync(
         HttpRequestMessage request,
         CancellationToken cancellationToken)
     {
-        var isInstaller =
-            request.RequestUri?.AbsolutePath.EndsWith(
+        var path = request.RequestUri?.AbsolutePath ?? string.Empty;
+        var content = path.EndsWith(
+                "GameLauncher-Setup.exe.sha256",
+                StringComparison.OrdinalIgnoreCase)
+            ? _checksum
+            : path.EndsWith(
                 "GameLauncher-Setup.exe",
-                StringComparison.OrdinalIgnoreCase) == true;
+                StringComparison.OrdinalIgnoreCase)
+                ? _installer
+                : _releaseJson;
 
         return Task.FromResult(
             new HttpResponseMessage(HttpStatusCode.OK)
             {
-                Content = new ByteArrayContent(
-                    isInstaller ? _installer : _releaseJson)
+                Content = new ByteArrayContent(content)
             });
     }
 }

@@ -1,4 +1,5 @@
 using System.Net.Http.Json;
+using System.Security.Cryptography;
 using System.Text.Json.Serialization;
 using GameLauncher.Core.Models;
 using GameLauncher.Core.Update;
@@ -49,10 +50,16 @@ public sealed class GitHubReleaseUpdateService : ILauncherUpdateService
         }
 
         Uri? installer = null;
+        Uri? checksum = null;
         var installerAsset = release.Assets?.FirstOrDefault(x =>
             string.Equals(
                 x.Name,
                 "GameLauncher-Setup.exe",
+                StringComparison.OrdinalIgnoreCase));
+        var checksumAsset = release.Assets?.FirstOrDefault(x =>
+            string.Equals(
+                x.Name,
+                "GameLauncher-Setup.exe.sha256",
                 StringComparison.OrdinalIgnoreCase));
 
         if (installerAsset?.BrowserDownloadUrl is not null &&
@@ -62,12 +69,20 @@ public sealed class GitHubReleaseUpdateService : ILauncherUpdateService
             installer = parsed;
         }
 
+        if (checksumAsset?.BrowserDownloadUrl is not null &&
+            Uri.TryCreate(checksumAsset.BrowserDownloadUrl, UriKind.Absolute, out var checksumUri) &&
+            checksumUri.Scheme == Uri.UriSchemeHttps)
+        {
+            checksum = checksumUri;
+        }
+
         return new LauncherUpdateInfo(
             currentVersion,
             latest,
             release.Name ?? release.TagName ?? $"v{latest}",
             ParseReleasePage(release.HtmlUrl),
             installer,
+            checksum,
             latest > currentVersion);
     }
 
@@ -77,10 +92,10 @@ public sealed class GitHubReleaseUpdateService : ILauncherUpdateService
     {
         ArgumentNullException.ThrowIfNull(update);
 
-        if (update.InstallerDownload is null)
+        if (update.InstallerDownload is null || update.ChecksumDownload is null)
         {
             throw new InvalidOperationException(
-                "This release does not contain GameLauncher-Setup.exe.");
+                "This release does not contain a verifiable GameLauncher-Setup.exe and SHA-256 checksum.");
         }
 
         var directory = Path.Combine(
@@ -105,8 +120,46 @@ public sealed class GitHubReleaseUpdateService : ILauncherUpdateService
             await input.CopyToAsync(output, cancellationToken);
         }
 
+        var expectedHash = await DownloadExpectedHashAsync(
+            update.ChecksumDownload,
+            cancellationToken);
+        var actualHash = await ComputeSha256Async(temporary, cancellationToken);
+
+        if (!string.Equals(expectedHash, actualHash, StringComparison.OrdinalIgnoreCase))
+        {
+            File.Delete(temporary);
+            throw new InvalidOperationException(
+                "Downloaded installer failed SHA-256 verification.");
+        }
+
         File.Move(temporary, path, overwrite: true);
         return path;
+    }
+
+    private async Task<string> DownloadExpectedHashAsync(
+        Uri checksumUri,
+        CancellationToken cancellationToken)
+    {
+        var text = await _http.GetStringAsync(checksumUri, cancellationToken);
+        var hash = text
+            .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)
+            .FirstOrDefault();
+
+        if (hash is null || hash.Length != 64 || !hash.All(Uri.IsHexDigit))
+        {
+            throw new InvalidOperationException("Release SHA-256 checksum is invalid.");
+        }
+
+        return hash;
+    }
+
+    private static async Task<string> ComputeSha256Async(
+        string path,
+        CancellationToken cancellationToken)
+    {
+        await using var stream = File.OpenRead(path);
+        var hash = await SHA256.HashDataAsync(stream, cancellationToken);
+        return Convert.ToHexString(hash);
     }
 
     private static Uri ParseReleasePage(string? value)
