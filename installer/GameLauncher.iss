@@ -10,6 +10,7 @@
 AppId={{E1CC9728-7476-4FD7-A14F-9960F0C83A80}
 AppName=My Game Launcher
 AppVersion={#AppVersion}
+SetupIconFile=..\src\GameLauncher.App\Assets\GameLauncher.ico
 AppPublisher=xasifsaeedx
 AppPublisherURL=https://github.com/xasifsaeedx/Game-Launcher
 AppSupportURL=https://github.com/xasifsaeedx/Game-Launcher/issues
@@ -25,6 +26,7 @@ PrivilegesRequired=lowest
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 UninstallDisplayName=My Game Launcher
+UninstallDisplayIcon={app}\GameLauncher.App.exe
 CloseApplications=yes
 RestartApplications=no
 SetupLogging=yes
