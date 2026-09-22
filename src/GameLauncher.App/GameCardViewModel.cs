@@ -6,8 +6,8 @@ public sealed class GameCardViewModel
 {
     public GameCardViewModel(
         GameLibraryItem item,
-        HatchableRemoteGame? hatchable = null,
-        bool isFavorite = false)
+        PersonalLibraryGame? personalLibrary = null,
+        GamePreference? preference = null)
     {
         Item = item;
         GameId = item.Game.Id;
@@ -22,13 +22,15 @@ public sealed class GameCardViewModel
                 .Distinct(StringComparer.OrdinalIgnoreCase));
 
         Playtime = FormatPlaytime(item.TotalPlaytimeSeconds);
-        Hatchable = hatchable;
-        IsFavorite = isFavorite;
-        FavoriteGlyph = isFavorite ? "★" : "☆";
-        RankBadge = hatchable is null ? string.Empty : $"NEXT #{hatchable.RankScore}";
-        SyncState = hatchable is null
+        PersonalLibrary = personalLibrary;
+        IsFavorite = preference?.IsFavorite == true;
+        FavoriteGlyph = IsFavorite ? "★" : "☆";
+        Rating = preference?.Rating ?? personalLibrary?.SheetRating;
+        RatingText = Rating.HasValue ? $"{Rating}/10" : "Rate";
+        RankBadge = personalLibrary?.Rank is int rank ? $"NEXT #{rank}" : string.Empty;
+        SyncState = personalLibrary is null
             ? string.Empty
-            : FormatSyncState(hatchable);
+            : FormatLibraryState(personalLibrary);
     }
 
     public GameLibraryItem Item { get; }
@@ -38,9 +40,11 @@ public sealed class GameCardViewModel
     public GameInstallation? Installation { get; }
     public string Source { get; }
     public string Playtime { get; }
-    public HatchableRemoteGame? Hatchable { get; }
+    public PersonalLibraryGame? PersonalLibrary { get; }
     public bool IsFavorite { get; }
     public string FavoriteGlyph { get; }
+    public int? Rating { get; }
+    public string RatingText { get; }
     public string RankBadge { get; }
     public string SyncState { get; }
 
@@ -52,7 +56,7 @@ public sealed class GameCardViewModel
         return $"{span.TotalHours:0.#} h";
     }
 
-    private static string FormatSyncState(HatchableRemoteGame game)
+    private static string FormatLibraryState(PersonalLibraryGame game)
     {
         if (!string.IsNullOrWhiteSpace(game.ProgressStatus))
         {
@@ -62,7 +66,7 @@ public sealed class GameCardViewModel
                 "completed" => "Completed",
                 "paused" => "Paused",
                 "dropped" => "Dropped",
-                _ => game.ProgressStatus
+                _ => ToTitleCase(game.ProgressStatus)
             };
         }
 
@@ -74,6 +78,11 @@ public sealed class GameCardViewModel
             _ => string.Empty
         };
     }
+
+    private static string ToTitleCase(string value) =>
+        string.IsNullOrWhiteSpace(value)
+            ? string.Empty
+            : char.ToUpperInvariant(value[0]) + value[1..];
 
     private static string DisplaySource(GameSource source) => source switch
     {
