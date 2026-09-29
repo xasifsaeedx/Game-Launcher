@@ -21,16 +21,21 @@ internal static class WindowsGameProcessPolicy
         "beservice",
         "beclient",
         "bootstrap",
-        "start_protected_game",
-        "ubisoftconnect",
-        "upc",
-        "steam",
-        "epicgameslauncher",
-        "eadesktop",
-        "origin",
-        "battlenet",
-        "battle.net"
+        "start_protected_game"
     ];
+
+    private static readonly HashSet<string> StorefrontHelperNames =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            "ubisoftconnect",
+            "upc",
+            "steam",
+            "epicgameslauncher",
+            "eadesktop",
+            "origin",
+            "battlenet",
+            "battle.net"
+        };
 
     public static bool ShouldTrackDirectProcess(
         GameInstallation installation,
@@ -221,6 +226,11 @@ internal static class WindowsGameProcessPolicy
             .GetFileNameWithoutExtension(executableName)
             .Replace(" ", string.Empty)
             .ToLowerInvariant();
+
+        if (StorefrontHelperNames.Contains(normalized))
+        {
+            return true;
+        }
 
         return HelperProcessTerms.Any(term =>
             normalized.Contains(
