@@ -34,6 +34,7 @@ internal static class LauncherTestSuite
         new("Pre-existing same-name process is rejected", WindowsProcessTrackingTests.PreExistingSameNameProcessIsRejected),
         new("New same-name elevated process is accepted without path", WindowsProcessTrackingTests.NewSameNameElevatedProcessIsAcceptedWithoutPath),
         new("Process tree expansion finds launcher handoff", WindowsProcessTrackingTests.ProcessTreeExpansionFindsLauncherHandoff),
+        new("Windows process snapshot sees current process", WindowsProcessTrackingTests.ProcessSnapshotSeesCurrentProcess),
         new("Helper process is rejected during handoff", WindowsProcessTrackingTests.HelperProcessIsRejectedDuringHandoff),
 
         new("Overlay formatter emits requested telemetry", OverlayTests.OverlayFormatterEmitsRequestedTelemetry),
