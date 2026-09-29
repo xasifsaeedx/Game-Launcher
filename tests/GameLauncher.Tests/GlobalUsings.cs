@@ -18,6 +18,7 @@ global using GameLauncher.Infrastructure.Graphics;
 global using GameLauncher.Infrastructure.History;
 global using GameLauncher.Infrastructure.Metadata;
 global using GameLauncher.Infrastructure.Repositories;
+global using GameLauncher.Infrastructure.Runtime;
 global using GameLauncher.Infrastructure.Storage;
 global using GameLauncher.Infrastructure.Sync;
 global using GameLauncher.Infrastructure.Update;
