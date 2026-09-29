@@ -90,6 +90,20 @@ internal static class WindowsProcessTrackingTests
         return Task.CompletedTask;
     }
 
+    internal static Task GameNamesContainingStoreWordsAreNotHelpers()
+    {
+        Assert.True(!WindowsGameProcessPolicy.IsHelperExecutable(
+            "ACOrigins.exe"));
+        Assert.True(!WindowsGameProcessPolicy.IsHelperExecutable(
+            "SteamWorldDig2.exe"));
+        Assert.True(WindowsGameProcessPolicy.IsHelperExecutable(
+            "Origin.exe"));
+        Assert.True(WindowsGameProcessPolicy.IsHelperExecutable(
+            "steam.exe"));
+
+        return Task.CompletedTask;
+    }
+
     internal static Task HelperProcessIsRejectedDuringHandoff()
     {
         var installation = CreateInstallation(
