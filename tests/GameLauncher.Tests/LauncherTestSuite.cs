@@ -30,6 +30,13 @@ internal static class LauncherTestSuite
         new("Launch profile service keeps one default across merged installs", LaunchTests.LaunchProfileServiceKeepsOneDefault),
         new("Smart launch orders actions and cleans companions", LaunchTests.SmartLaunchOrdersActionsAndCleansCompanions),
         new("Session service persists runtime playtime", LaunchTests.SessionServicePersistsPlaytime),
+        new("Elevated direct process does not require path access", WindowsProcessTrackingTests.ElevatedDirectProcessDoesNotRequirePathAccess),
+        new("Pre-existing same-name process is rejected", WindowsProcessTrackingTests.PreExistingSameNameProcessIsRejected),
+        new("New same-name elevated process is accepted without path", WindowsProcessTrackingTests.NewSameNameElevatedProcessIsAcceptedWithoutPath),
+        new("Process tree expansion finds launcher handoff", WindowsProcessTrackingTests.ProcessTreeExpansionFindsLauncherHandoff),
+        new("Windows process snapshot sees current process", WindowsProcessTrackingTests.ProcessSnapshotSeesCurrentProcess),
+        new("Game names containing store words are not helpers", WindowsProcessTrackingTests.GameNamesContainingStoreWordsAreNotHelpers),
+        new("Helper process is rejected during handoff", WindowsProcessTrackingTests.HelperProcessIsRejectedDuringHandoff),
 
         new("Overlay formatter emits requested telemetry", OverlayTests.OverlayFormatterEmitsRequestedTelemetry),
         new("Overlay settings persist and normalize", OverlayTests.OverlaySettingsPersistAndNormalize),
