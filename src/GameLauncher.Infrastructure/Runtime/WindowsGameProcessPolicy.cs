@@ -68,7 +68,8 @@ internal static class WindowsGameProcessPolicy
 
         if (MatchesConfiguredExecutableName(
                 installation,
-                process.ExecutableName))
+                process.ExecutableName) &&
+            (!wasPresentBefore || isDescendant))
         {
             return true;
         }
