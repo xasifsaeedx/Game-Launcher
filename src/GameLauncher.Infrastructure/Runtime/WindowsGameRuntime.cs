@@ -6,10 +6,10 @@ namespace GameLauncher.Infrastructure.Runtime;
 
 public sealed class WindowsGameRuntime : IGameRuntime
 {
-    private static readonly string[] HelperProcessTerms =
-    [
-        "launcher", "crash", "report", "updater", "update", "redist", "setup", "unins"
-    ];
+    private static readonly TimeSpan DetectionTimeout = TimeSpan.FromSeconds(60);
+    private static readonly TimeSpan DirectProcessStabilityDelay = TimeSpan.FromSeconds(1.5);
+    private static readonly TimeSpan CandidateStabilityDelay = TimeSpan.FromSeconds(1.5);
+    private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(400);
 
     public async Task<IGameRunHandle> LaunchAsync(
         GameInstallation installation,
@@ -17,24 +17,43 @@ public sealed class WindowsGameRuntime : IGameRuntime
     {
         ArgumentNullException.ThrowIfNull(installation);
 
-        var before = SnapshotProcessIds();
+        var before = WindowsProcessSnapshot.Capture();
         var startedUtc = DateTimeOffset.UtcNow;
 
         var directProcess = StartInstallation(installation);
-        if (directProcess is not null &&
-            ShouldTrackDirectProcess(directProcess, installation))
-        {
-            var directPath = TryGetProcessPath(directProcess) ?? installation.ExecutablePath;
-            return new WindowsGameRunHandle(directProcess, startedUtc, directPath);
-        }
+        var launchRootIds = new HashSet<int>();
 
-        directProcess?.Dispose();
+        if (directProcess is not null)
+        {
+            var directId = TryGetProcessId(directProcess);
+            if (directId.HasValue)
+            {
+                launchRootIds.Add(directId.Value);
+            }
+
+            if (await CanTrackDirectProcessAsync(
+                    directProcess,
+                    installation,
+                    cancellationToken))
+            {
+                var detectedPath =
+                    TryGetProcessPath(directProcess) ??
+                    installation.ExecutablePath;
+
+                return new WindowsGameRunHandle(
+                    directProcess,
+                    startedUtc,
+                    detectedPath);
+            }
+
+            directProcess.Dispose();
+        }
 
         var detected = await WaitForGameProcessAsync(
             installation,
             before,
-            startedUtc,
-            TimeSpan.FromSeconds(60),
+            launchRootIds,
+            DetectionTimeout,
             cancellationToken);
 
         if (detected is null)
@@ -43,106 +62,89 @@ public sealed class WindowsGameRuntime : IGameRuntime
                 "The game was launched, but its running process could not be detected within 60 seconds.");
         }
 
-        var detectedPath = TryGetProcessPath(detected);
-        return new WindowsGameRunHandle(detected, startedUtc, detectedPath);
+        return new WindowsGameRunHandle(
+            detected,
+            startedUtc,
+            TryGetProcessPath(detected));
     }
 
-    private static HashSet<int> SnapshotProcessIds()
-    {
-        var ids = new HashSet<int>();
-        foreach (var process in Process.GetProcesses())
-        {
-            try
-            {
-                ids.Add(process.Id);
-            }
-            finally
-            {
-                process.Dispose();
-            }
-        }
-
-        return ids;
-    }
-
-    private static Process? StartInstallation(GameInstallation installation)
+    private static Process? StartInstallation(
+        GameInstallation installation)
     {
         if (!string.IsNullOrWhiteSpace(installation.LaunchUri))
         {
-            return Process.Start(new ProcessStartInfo(installation.LaunchUri)
-            {
-                UseShellExecute = true
-            });
+            return Process.Start(
+                new ProcessStartInfo(installation.LaunchUri)
+                {
+                    UseShellExecute = true
+                });
         }
 
         if (string.IsNullOrWhiteSpace(installation.ExecutablePath))
         {
-            throw new InvalidOperationException("This game does not have a launch URI or executable path.");
+            throw new InvalidOperationException(
+                "This game does not have a launch URI or executable path.");
         }
 
         if (!File.Exists(installation.ExecutablePath))
         {
-            throw new FileNotFoundException("The configured game executable no longer exists.", installation.ExecutablePath);
+            throw new FileNotFoundException(
+                "The configured game executable no longer exists.",
+                installation.ExecutablePath);
         }
 
-        var startInfo = new ProcessStartInfo(installation.ExecutablePath)
-        {
-            UseShellExecute = true,
-            WorkingDirectory = !string.IsNullOrWhiteSpace(installation.InstallPath)
-                ? installation.InstallPath
-                : Path.GetDirectoryName(installation.ExecutablePath) ?? string.Empty,
-            Arguments = installation.LaunchArguments ?? string.Empty
-        };
-
-        return Process.Start(startInfo);
-    }
-
-    private static bool ShouldTrackDirectProcess(
-        Process process,
-        GameInstallation installation)
-    {
-        if (installation.Source == GameSource.Xbox) return false;
-        return !IsHelperProcess(process) && IsUsableDirectProcess(process, installation);
-    }
-
-    private static bool IsHelperProcess(Process process)
-    {
-        try
-        {
-            return HelperProcessTerms.Any(term =>
-                process.ProcessName.Contains(term, StringComparison.OrdinalIgnoreCase));
-        }
-        catch
-        {
-            return true;
-        }
-    }
-
-    private static bool IsUsableDirectProcess(Process process, GameInstallation installation)
-    {
-        try
-        {
-            if (process.HasExited) return false;
-
-            if (string.IsNullOrWhiteSpace(installation.ExecutablePath))
+        return Process.Start(
+            new ProcessStartInfo(installation.ExecutablePath)
             {
-                return false;
-            }
+                UseShellExecute = true,
+                WorkingDirectory =
+                    !string.IsNullOrWhiteSpace(installation.InstallPath)
+                        ? installation.InstallPath
+                        : Path.GetDirectoryName(
+                              installation.ExecutablePath) ??
+                          string.Empty,
+                Arguments =
+                    installation.LaunchArguments ??
+                    string.Empty
+            });
+    }
 
-            var path = TryGetProcessPath(process);
-            return !string.IsNullOrWhiteSpace(path) &&
-                   PathsEqual(path, installation.ExecutablePath);
-        }
-        catch
+    private static async Task<bool> CanTrackDirectProcessAsync(
+        Process process,
+        GameInstallation installation,
+        CancellationToken cancellationToken)
+    {
+        var processId = TryGetProcessId(process);
+        if (!processId.HasValue)
         {
             return false;
         }
+
+        var executableName = TryGetExecutableName(process);
+        var accessiblePath = TryGetProcessPath(process);
+
+        if (!WindowsGameProcessPolicy.ShouldTrackDirectProcess(
+                installation,
+                executableName,
+                accessiblePath,
+                IsStillRunning(process)))
+        {
+            return false;
+        }
+
+        await Task.Delay(
+            DirectProcessStabilityDelay,
+            cancellationToken);
+
+        return WindowsProcessSnapshot.IsAlive(
+            processId.Value,
+            executableName);
     }
 
     private static async Task<Process?> WaitForGameProcessAsync(
         GameInstallation installation,
-        HashSet<int> before,
-        DateTimeOffset launchedUtc,
+        IReadOnlyDictionary<int, WindowsProcessEntry> before,
+        IReadOnlyCollection<int> launchRootIds,
         TimeSpan timeout,
         CancellationToken cancellationToken)
     {
@@ -152,115 +154,149 @@ public sealed class WindowsGameRuntime : IGameRuntime
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            var candidates = FindCandidates(installation, before, launchedUtc).ToArray();
+            var snapshot = WindowsProcessSnapshot.Capture();
+            var lineage = WindowsGameProcessPolicy.ExpandLineage(
+                snapshot.Values,
+                launchRootIds);
+
+            var candidates = FindCandidates(
+                    installation,
+                    before,
+                    snapshot,
+                    lineage)
+                .OrderByDescending(x => x.Score)
+                .ToArray();
+
             if (candidates.Length > 0)
             {
-                await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken);
+                await Task.Delay(
+                    CandidateStabilityDelay,
+                    cancellationToken);
 
-                var surviving = candidates
-                    .Where(IsStillRunning)
-                    .OrderByDescending(ScoreCandidate)
-                    .ToArray();
-
-                if (surviving.Length > 0)
+                foreach (var candidate in candidates)
                 {
-                    var selected = surviving[0];
-                    foreach (var candidate in candidates)
+                    if (!WindowsProcessSnapshot.IsAlive(
+                            candidate.Entry.ProcessId,
+                            candidate.Entry.ExecutableName))
                     {
-                        if (candidate.Id != selected.Id) candidate.Dispose();
+                        continue;
                     }
 
-                    return selected;
-                }
+                    var process = TryOpenProcess(
+                        candidate.Entry.ProcessId);
 
-                foreach (var candidate in candidates) candidate.Dispose();
+                    if (process is not null)
+                    {
+                        return process;
+                    }
+                }
             }
 
-            await Task.Delay(TimeSpan.FromMilliseconds(500), cancellationToken);
+            await Task.Delay(
+                PollInterval,
+                cancellationToken);
         }
 
         return null;
     }
 
-    private static IEnumerable<Process> FindCandidates(
+    private static IEnumerable<ProcessCandidate> FindCandidates(
         GameInstallation installation,
-        HashSet<int> before,
-        DateTimeOffset launchedUtc)
+        IReadOnlyDictionary<int, WindowsProcessEntry> before,
+        IReadOnlyDictionary<int, WindowsProcessEntry> current,
+        IReadOnlySet<int> lineage)
     {
-        foreach (var process in Process.GetProcesses())
+        foreach (var entry in current.Values)
         {
-            var keep = false;
-            try
+            if (entry.ProcessId <= 0)
             {
-                if (process.HasExited) continue;
-
-                var path = TryGetProcessPath(process);
-                if (string.IsNullOrWhiteSpace(path)) continue;
-
-                if (!string.IsNullOrWhiteSpace(installation.ExecutablePath) &&
-                    PathsEqual(path, installation.ExecutablePath) &&
-                    installation.Source != GameSource.Xbox &&
-                    !IsHelperProcess(process))
-                {
-                    keep = true;
-                }
-                else if (!string.IsNullOrWhiteSpace(installation.InstallPath) &&
-                         IsPathUnderDirectory(path, installation.InstallPath) &&
-                         (!before.Contains(process.Id) || WasStartedNearLaunch(process, launchedUtc)))
-                {
-                    keep = true;
-                }
-            }
-            catch
-            {
-                keep = false;
+                continue;
             }
 
-            if (keep)
+            var wasPresentBefore = before.ContainsKey(
+                entry.ProcessId);
+
+            var isDescendant =
+                lineage.Contains(entry.ProcessId) &&
+                !wasPresentBefore;
+
+            var accessiblePath = TryGetProcessPath(
+                entry.ProcessId);
+
+            if (!WindowsGameProcessPolicy.IsCandidate(
+                    installation,
+                    entry,
+                    isDescendant,
+                    wasPresentBefore,
+                    accessiblePath))
             {
-                yield return process;
+                continue;
             }
-            else
+
+            var score = WindowsGameProcessPolicy.ScoreCandidate(
+                installation,
+                entry,
+                isDescendant,
+                wasPresentBefore,
+                accessiblePath,
+                TryGetWorkingSet(entry.ProcessId));
+
+            yield return new ProcessCandidate(
+                entry,
+                score);
+        }
+    }
+
+    private static int? TryGetProcessId(
+        Process process)
+    {
+        try
+        {
+            return process.Id;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static string? TryGetExecutableName(
+        Process process)
+    {
+        try
+        {
+            return process.ProcessName + ".exe";
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static Process? TryOpenProcess(
+        int processId)
+    {
+        try
+        {
+            var process = Process.GetProcessById(
+                processId);
+
+            if (process.HasExited)
             {
                 process.Dispose();
+                return null;
             }
-        }
-    }
 
-    private static bool WasStartedNearLaunch(Process process, DateTimeOffset launchedUtc)
-    {
-        try
-        {
-            return process.StartTime.ToUniversalTime() >= launchedUtc.UtcDateTime.AddSeconds(-5);
+            return process;
         }
         catch
         {
-            return false;
+            return null;
         }
     }
 
-    private static int ScoreCandidate(Process process)
-    {
-        var score = 100;
-        try
-        {
-            var name = process.ProcessName;
-            if (HelperProcessTerms.Any(term => name.Contains(term, StringComparison.OrdinalIgnoreCase)))
-            {
-                score -= 80;
-            }
-
-            score += (int)Math.Min(100, process.WorkingSet64 / (1024 * 1024 * 10));
-        }
-        catch
-        {
-            // Keep the neutral score.
-        }
-
-        return score;
-    }
-
-    private static bool IsStillRunning(Process process)
+    private static bool IsStillRunning(
+        Process process)
     {
         try
         {
@@ -273,7 +309,8 @@ public sealed class WindowsGameRuntime : IGameRuntime
         }
     }
 
-    private static string? TryGetProcessPath(Process process)
+    private static string? TryGetProcessPath(
+        Process process)
     {
         try
         {
@@ -285,34 +322,39 @@ public sealed class WindowsGameRuntime : IGameRuntime
         }
     }
 
-    private static bool PathsEqual(string left, string right)
+    private static string? TryGetProcessPath(
+        int processId)
     {
+        using var process = TryOpenProcess(
+            processId);
+
+        return process is null
+            ? null
+            : TryGetProcessPath(process);
+    }
+
+    private static long TryGetWorkingSet(
+        int processId)
+    {
+        using var process = TryOpenProcess(
+            processId);
+
+        if (process is null)
+        {
+            return 0;
+        }
+
         try
         {
-            return string.Equals(
-                Path.GetFullPath(left),
-                Path.GetFullPath(right),
-                StringComparison.OrdinalIgnoreCase);
+            return process.WorkingSet64;
         }
         catch
         {
-            return false;
+            return 0;
         }
     }
 
-    private static bool IsPathUnderDirectory(string candidate, string directory)
-    {
-        try
-        {
-            var root = Path.GetFullPath(directory)
-                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
-                + Path.DirectorySeparatorChar;
-            var fullCandidate = Path.GetFullPath(candidate);
-            return fullCandidate.StartsWith(root, StringComparison.OrdinalIgnoreCase);
-        }
-        catch
-        {
-            return false;
-        }
-    }
+    private sealed record ProcessCandidate(
+        WindowsProcessEntry Entry,
+        int Score);
 }
