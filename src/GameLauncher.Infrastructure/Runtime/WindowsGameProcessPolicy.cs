@@ -21,7 +21,15 @@ internal static class WindowsGameProcessPolicy
         "beservice",
         "beclient",
         "bootstrap",
-        "start_protected_game"
+        "start_protected_game",
+        "ubisoftconnect",
+        "upc",
+        "steam",
+        "epicgameslauncher",
+        "eadesktop",
+        "origin",
+        "battlenet",
+        "battle.net"
     ];
 
     public static bool ShouldTrackDirectProcess(
