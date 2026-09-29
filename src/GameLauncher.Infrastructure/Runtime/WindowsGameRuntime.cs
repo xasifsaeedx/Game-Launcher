@@ -36,14 +36,25 @@ public sealed class WindowsGameRuntime : IGameRuntime
                     installation,
                     cancellationToken))
             {
+                var processId = TryGetProcessId(directProcess)
+                    ?? throw new InvalidOperationException(
+                        "The launched game process did not expose a process ID.");
+
+                var executableName =
+                    TryGetExecutableName(directProcess) ??
+                    Path.GetFileName(installation.ExecutablePath);
+
                 var detectedPath =
                     TryGetProcessPath(directProcess) ??
                     installation.ExecutablePath;
 
+                directProcess.Dispose();
+
                 return new WindowsGameRunHandle(
-                    directProcess,
+                    processId,
                     startedUtc,
-                    detectedPath);
+                    detectedPath,
+                    executableName);
             }
 
             directProcess.Dispose();
@@ -63,9 +74,10 @@ public sealed class WindowsGameRuntime : IGameRuntime
         }
 
         return new WindowsGameRunHandle(
-            detected,
+            detected.Entry.ProcessId,
             startedUtc,
-            TryGetProcessPath(detected));
+            detected.AccessiblePath,
+            detected.Entry.ExecutableName);
     }
 
     private static Process? StartInstallation(
@@ -120,14 +132,20 @@ public sealed class WindowsGameRuntime : IGameRuntime
             return false;
         }
 
-        var executableName = TryGetExecutableName(process);
+        var executableName =
+            TryGetExecutableName(process) ??
+            Path.GetFileName(installation.ExecutablePath);
+
         var accessiblePath = TryGetProcessPath(process);
+        var isRunning = WindowsProcessSnapshot.IsAlive(
+            processId.Value,
+            executableName);
 
         if (!WindowsGameProcessPolicy.ShouldTrackDirectProcess(
                 installation,
                 executableName,
                 accessiblePath,
-                IsStillRunning(process)))
+                isRunning))
         {
             return false;
         }
@@ -141,7 +159,7 @@ public sealed class WindowsGameRuntime : IGameRuntime
             executableName);
     }
 
-    private static async Task<Process?> WaitForGameProcessAsync(
+    private static async Task<ProcessCandidate?> WaitForGameProcessAsync(
         GameInstallation installation,
         IReadOnlyDictionary<int, WindowsProcessEntry> before,
         IReadOnlyCollection<int> launchRootIds,
@@ -175,19 +193,11 @@ public sealed class WindowsGameRuntime : IGameRuntime
 
                 foreach (var candidate in candidates)
                 {
-                    if (!WindowsProcessSnapshot.IsAlive(
+                    if (WindowsProcessSnapshot.IsAlive(
                             candidate.Entry.ProcessId,
                             candidate.Entry.ExecutableName))
                     {
-                        continue;
-                    }
-
-                    var process = TryOpenProcess(
-                        candidate.Entry.ProcessId);
-
-                    if (process is not null)
-                    {
-                        return process;
+                        return candidate;
                     }
                 }
             }
@@ -243,6 +253,7 @@ public sealed class WindowsGameRuntime : IGameRuntime
 
             yield return new ProcessCandidate(
                 entry,
+                accessiblePath,
                 score);
         }
     }
@@ -273,42 +284,6 @@ public sealed class WindowsGameRuntime : IGameRuntime
         }
     }
 
-    private static Process? TryOpenProcess(
-        int processId)
-    {
-        try
-        {
-            var process = Process.GetProcessById(
-                processId);
-
-            if (process.HasExited)
-            {
-                process.Dispose();
-                return null;
-            }
-
-            return process;
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
-    private static bool IsStillRunning(
-        Process process)
-    {
-        try
-        {
-            process.Refresh();
-            return !process.HasExited;
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
     private static string? TryGetProcessPath(
         Process process)
     {
@@ -325,27 +300,23 @@ public sealed class WindowsGameRuntime : IGameRuntime
     private static string? TryGetProcessPath(
         int processId)
     {
-        using var process = TryOpenProcess(
-            processId);
-
-        return process is null
-            ? null
-            : TryGetProcessPath(process);
+        try
+        {
+            using var process = Process.GetProcessById(processId);
+            return TryGetProcessPath(process);
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private static long TryGetWorkingSet(
         int processId)
     {
-        using var process = TryOpenProcess(
-            processId);
-
-        if (process is null)
-        {
-            return 0;
-        }
-
         try
         {
+            using var process = Process.GetProcessById(processId);
             return process.WorkingSet64;
         }
         catch
@@ -356,5 +327,6 @@ public sealed class WindowsGameRuntime : IGameRuntime
 
     private sealed record ProcessCandidate(
         WindowsProcessEntry Entry,
+        string? AccessiblePath,
         int Score);
 }
