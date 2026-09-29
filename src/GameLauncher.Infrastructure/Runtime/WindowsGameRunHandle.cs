@@ -1,51 +1,56 @@
-using System.Diagnostics;
 using GameLauncher.Core.Runtime;
 
 namespace GameLauncher.Infrastructure.Runtime;
 
 internal sealed class WindowsGameRunHandle : IGameRunHandle
 {
-    private readonly Process _process;
+    private static readonly TimeSpan PollInterval =
+        TimeSpan.FromMilliseconds(500);
+
+    private readonly string? _expectedExecutableName;
 
     public WindowsGameRunHandle(
-        Process process,
+        int processId,
         DateTimeOffset startedUtc,
-        string? detectedExecutablePath)
+        string? detectedExecutablePath,
+        string? expectedExecutableName)
     {
-        _process = process ?? throw new ArgumentNullException(nameof(process));
+        if (processId <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(processId));
+        }
+
+        ProcessId = processId;
         StartedUtc = startedUtc;
         DetectedExecutablePath = detectedExecutablePath;
-
-        try
-        {
-            ProcessId = process.Id;
-        }
-        catch
-        {
-            ProcessId = null;
-        }
+        _expectedExecutableName = expectedExecutableName;
     }
 
     public DateTimeOffset StartedUtc { get; }
     public int? ProcessId { get; }
     public string? DetectedExecutablePath { get; }
 
-    public async Task<DateTimeOffset> WaitForExitAsync(CancellationToken cancellationToken = default)
+    public async Task<DateTimeOffset> WaitForExitAsync(
+        CancellationToken cancellationToken = default)
     {
-        try
-        {
-            await _process.WaitForExitAsync(cancellationToken);
-            return DateTimeOffset.UtcNow;
-        }
-        catch (InvalidOperationException)
+        if (!ProcessId.HasValue)
         {
             return DateTimeOffset.UtcNow;
         }
+
+        while (WindowsProcessSnapshot.IsAlive(
+                   ProcessId.Value,
+                   _expectedExecutableName))
+        {
+            await Task.Delay(
+                PollInterval,
+                cancellationToken);
+        }
+
+        return DateTimeOffset.UtcNow;
     }
 
-    public ValueTask DisposeAsync()
-    {
-        _process.Dispose();
-        return ValueTask.CompletedTask;
-    }
+    public ValueTask DisposeAsync() =>
+        ValueTask.CompletedTask;
 }
