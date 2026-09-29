@@ -81,6 +81,15 @@ internal static class WindowsProcessTrackingTests
         return Task.CompletedTask;
     }
 
+    internal static Task ProcessSnapshotSeesCurrentProcess()
+    {
+        var snapshot = WindowsProcessSnapshot.Capture();
+
+        Assert.True(snapshot.ContainsKey(Environment.ProcessId));
+        Assert.True(WindowsProcessSnapshot.IsAlive(Environment.ProcessId));
+        return Task.CompletedTask;
+    }
+
     internal static Task HelperProcessIsRejectedDuringHandoff()
     {
         var installation = CreateInstallation(
